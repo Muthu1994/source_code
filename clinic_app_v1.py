@@ -52,8 +52,7 @@ def init_db():
             dob TEXT,  -- YYYY-MM-DD
             phone TEXT,
             email TEXT,
-            address TEXT,
-            UNIQUE(phone) ON CONFLICT IGNORE
+            address TEXT
         );
         
         CREATE TABLE IF NOT EXISTS cases (
@@ -108,6 +107,64 @@ def init_db():
     conn.commit()
     conn.close()
 
+def migrate_remove_unique_phone():
+    """Migration to remove UNIQUE constraint from phone column in existing databases"""
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    
+    try:
+        # Check if migration has already been applied by looking at table schema
+        cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='patients'")
+        schema = cursor.fetchone()
+        
+        # If schema contains UNIQUE constraint, migration is needed
+        if not schema or "UNIQUE" not in schema[0]:
+            # Migration already applied or new database
+            return True
+        
+        print("Running migration: Removing UNIQUE constraint from phone...")
+        
+        # Create new table without UNIQUE constraint
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS patients_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                first_name TEXT NOT NULL,
+                last_name TEXT NOT NULL,
+                gender TEXT,
+                dob TEXT,
+                phone TEXT,
+                email TEXT,
+                address TEXT
+            )
+        """)
+        
+        # Copy data from old table to new table
+        cursor.execute("""
+            INSERT INTO patients_new (id, first_name, last_name, gender, dob, phone, email, address)
+            SELECT id, first_name, last_name, gender, dob, phone, email, address FROM patients
+        """)
+        
+        # Drop old table
+        cursor.execute("DROP TABLE IF EXISTS patients")
+        
+        # Rename new table to patients
+        cursor.execute("ALTER TABLE patients_new RENAME TO patients")
+        
+        # Recreate indexes
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_patients_phone ON patients(phone)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_patients_name ON patients(last_name, first_name)")
+        
+        conn.commit()
+        print("✓ Migration completed: UNIQUE constraint removed from phone column")
+        return True
+    except Exception as e:
+        print(f"✗ Migration error: {e}")
+        conn.rollback()
+        return False
+    finally:
+        conn.close()
+
+
 # ---------------------- Main App ----------------------
 
 class ClinicApp(tk.Tk):
@@ -116,6 +173,10 @@ class ClinicApp(tk.Tk):
         self.title("Clinic App: Patient & Case Management")
         self.geometry("1200x800")
         self.minsize(1050, 740)
+        
+        # Initialize database and run migrations
+        init_db()
+        migrate_remove_unique_phone()
         
         # State
         self.current_patient_id = None
@@ -920,11 +981,16 @@ class ClinicApp(tk.Tk):
             "type": "Type", "name": "Name", "dosage": "Dosage", "frequency": "Frequncy", "duration": "Days",
             "start": "Start Date", "end": "End Date", "status": "Status", "notes": "Notes"
             }
-        widths = (80, 150, 100, 100, 60, 90, 90, 80, 200)
+        widths = (80, 200, 100, 100, 60, 90, 90, 80, 250)  # Much wider columns for better text visibility
         for col, width in zip(cols, widths):
             self.plan_tree.heading(col, text = headers[col], anchor="w")
             self.plan_tree.column(col, width=width, anchor="center" if col in ["start","end","duration"] else "w")
         self.plan_tree.grid(row=0, column=0, sticky="nsew")
+        
+        # Bind hover events for tooltip on name and notes columns only
+        self.plan_tree.bind("<Motion>", self.on_plan_tree_motion)
+        self.plan_tree.bind("<Leave>", self.on_plan_tree_leave)
+        self.tooltip_window = None
         
         plan_v_scroll = ttk.Scrollbar(list_frame, orient="vertical", command=self.plan_tree.yview)
         plan_v_scroll.grid(row=0, column=1, sticky="ns")
@@ -945,6 +1011,78 @@ class ClinicApp(tk.Tk):
         def on_mousewheel(event):            
             main_canvas.yview_scroll(int(-1*(event.delta/120)), "units")
         main_canvas.bind_all("<MouseWheel>", on_mousewheel)
+
+    def on_plan_tree_motion(self, event):
+        """Show tooltip on hover for name and notes columns only"""
+        item = self.plan_tree.identify_row(event.y)
+        column = self.plan_tree.identify_column(event.x)
+        
+        if not item or not column:
+            self.on_plan_tree_leave(None)
+            return
+        
+        try:
+            col_index = int(column.lstrip("#")) - 1
+        except (ValueError, TypeError):
+            self.on_plan_tree_leave(None)
+            return
+        
+        # Only show tooltip for name (index 1) and notes (index 8) columns
+        if col_index not in [1, 8]:
+            self.on_plan_tree_leave(None)
+            return
+        
+        values = self.plan_tree.item(item, "values")
+        
+        if col_index < len(values):
+            content = str(values[col_index])
+            
+            # Only show tooltip if text is not empty
+            if content:
+                self.show_tooltip(event, content)
+            else:
+                self.on_plan_tree_leave(None)
+        else:
+            self.on_plan_tree_leave(None)
+    
+    def on_plan_tree_leave(self, event):
+        """Hide tooltip when leaving tree"""
+        if self.tooltip_window:
+            self.tooltip_window.destroy()
+            self.tooltip_window = None
+    
+    def show_tooltip(self, event, text):
+        """Display tooltip near cursor"""
+        # Destroy existing tooltip
+        if self.tooltip_window:
+            self.tooltip_window.destroy()
+        
+        # Create tooltip window
+        self.tooltip_window = tk.Toplevel(self.plan_tree)
+        self.tooltip_window.wm_overrideredirect(True)
+        
+        # Position near cursor (offset by 10, 10 pixels)
+        x = event.x_root + 10
+        y = event.y_root + 10
+        self.tooltip_window.wm_geometry(f"+{x}+{y}")
+        
+        # Add label with text
+        label = tk.Label(
+            self.tooltip_window,
+            text=text,
+            background="#ffffe0",
+            relief="solid",
+            borderwidth=1,
+            wraplength=300,
+            justify="left",
+            padx=5,
+            pady=5,
+            font=("Arial", 9)
+        )
+        label.pack()
+        
+        # Ensure tooltip appears on top
+        self.tooltip_window.lift()
 
     def on_consent_changed(self):
         """Auto-set consent date when checkbox is checked"""
@@ -1583,6 +1721,5 @@ class ClinicApp(tk.Tk):
 # ---------------------- Run ----------------------
 
 if __name__ == "__main__":
-    init_db()
     app = ClinicApp()
     app.mainloop()
