@@ -328,8 +328,15 @@ class ClinicApp(tk.Tk):
         dob_frame.grid(row=1, column=3, sticky="ew", padx=(5, 15), pady=5)
         dob_frame.columnconfigure(0, weight=1)        
         dob_entry = ttk.Entry(dob_frame, textvariable=self.var_dob, font=("Segoe UI", 9))
-        dob_entry.grid(row=0, column=0, sticky="ew", padx=(0, 15))
-        ttk.Label(dob_frame, text="YYYY-MM-DD", font=("Segoe UI", 8), foreground="gray").grid(row=0, column=1)
+        dob_entry.grid(row=0, column=0, sticky="ew", padx=(0, 5))
+        ttk.Label(dob_frame, text="YYYY-MM-DD", font=("Segoe UI", 8), foreground="gray").grid(row=0, column=1, padx=(0, 5))
+        
+        # Age label that will be updated when DOB changes
+        self.age_label = ttk.Label(dob_frame, text="", font=("Segoe UI", 9, "bold"), foreground="blue")
+        self.age_label.grid(row=0, column=2, padx=(5, 0))
+        
+        # Bind DOB entry to calculate age on change
+        dob_entry.bind("<FocusOut>", lambda e: self.update_age())
         
         #Row 3: Contact Information
         ttk.Label(form_section, text="Phone *:", font=("Segoe UI", 9, "bold")).grid(row=2, column=0, sticky="w", pady=5)
@@ -507,6 +514,8 @@ class ClinicApp(tk.Tk):
         self.var_phone.set("")
         self.var_email.set("")
         self.var_address.set("")
+        # Clear age label
+        self.age_label.config(text="")
         #cler tree selection
         for item in self.p_tree.selection():
             self.p_tree.selection_remove(item)
@@ -557,8 +566,34 @@ class ClinicApp(tk.Tk):
             self.var_phone.set(phone or "")
             self.var_email.set(email or "")
             self.var_address.set(address or "")
+            
+            # Update age display
+            self.update_age()
         
         self.load_case_history_for_patient(self.current_patient_id)
+
+    def update_age(self):
+        """Calculate and display patient age based on date of birth"""
+        dob_str = self.var_dob.get().strip()
+        
+        if not dob_str:
+            self.age_label.config(text="")
+            return
+        
+        try:
+            # Parse date of birth (YYYY-MM-DD format)
+            from datetime import datetime
+            dob = datetime.strptime(dob_str, "%Y-%m-%d").date()
+            
+            # Calculate age
+            today = datetime.today().date()
+            age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+            
+            # Display age
+            self.age_label.config(text=f"Age: {age} yrs", foreground="blue")
+        except ValueError:
+            # Invalid date format
+            self.age_label.config(text="Invalid date", foreground="red")
 
     def load_case_history_for_patient(self, patient_id: int):
         self.clear_case_history()
