@@ -156,8 +156,15 @@ class ClinicApp(tk.Tk):
         self.config(menu=menubar)
 
     def build_ui(self):
-        nb = ttk.Notebook(self)
-        nb.pack(fill="both", expand=True, padx=8, pady=8)
+
+        main_continer = ttk.Frame(self)
+        main_continer.pack(fill="both", expand=True, padx=8, pady=8)
+        main_continer.rowconfigure(0, weight=1)
+        main_continer.rowconfigure(1, weight=0)
+        main_continer.columnconfigure(0, weight=1)
+        
+        nb = ttk.Notebook(main_continer)
+        nb.grid(row=0, column=0, sticky="nsew", pady=(0,8))
         self.nb = nb
         
         self.tab_patients = ttk.Frame(nb, padding=10)
@@ -173,12 +180,11 @@ class ClinicApp(tk.Tk):
         self.build_browse_tab()
         
         # Bottom buttons
-        bottom = ttk.Frame(self, padding=(8, 4))
-        bottom.pack(fill="x")
-        ttk.Button(bottom, text="Save Patient", command=self.on_save_patient).pack(side="right")
-        
+        bottom = ttk.Frame(main_continer, padding=(8, 4))
+        bottom.grid(row=1, column=0, sticky="ew")
+                
         # Right side buttons
-        ttk.Button(bottom, text="Close Case", command=self.on_close_case).pack(side="right", padx=(6, 0))
+        ttk.Button(bottom, text="Close Case", command=self.on_close_case).pack(side="right",padx=(0, 6))
         ttk.Button(bottom, text="Save Case + Plan", command=self.on_save_case).pack(side="right")
         ttk.Button(bottom, text="New Case", command=self.on_new_case).pack(side="right", padx=(0, 6))
 
@@ -186,32 +192,56 @@ class ClinicApp(tk.Tk):
 
     def build_patients_tab(self):
         f = self.tab_patients
-        for i in range(0, 4):
-            f.columnconfigure(i, weight=1)
-        
-        # Search filters
+        f.configure(padding=0)
+
+        # Configure main grid
+        f.columnconfigure(0, weight=1)
+        f.rowconfigure(2, weight=1) #Make the main content area expndable
+
+        #Search filters
+        # ===== TOP SECTION: SEARCH AND ACTIONS ===
+        search_section = ttk.LabelFrame(f, text= "Search Patients", padding=15)
+        search_section.grid(row=0, column=0, sticky="ew", pady=(0,10))
+        search_section.columnconfigure(1, weight=1)
+        search_section.columnconfigure(3, weight=1)
+
         self.var_p_name = tk.StringVar()
         self.var_p_phone = tk.StringVar()
-        row = 0
-        ttk.Label(f, text="Name (contains)").grid(row=row, column=0, sticky="w")
-        ttk.Entry(f, textvariable=self.var_p_name).grid(row=row, column=1, sticky="ew", padx=4, pady=4)
-        ttk.Label(f, text="Phone").grid(row=row, column=2, sticky="w")
-        ttk.Entry(f, textvariable=self.var_p_phone).grid(row=row, column=3, sticky="ew", padx=4, pady=4)
-        row += 1        
-        btns = ttk.Frame(f)
-        btns.grid(row=row, column=0, columnspan=4, sticky="e")
-        ttk.Button(btns, text="Search", command=self.on_patients_search).grid(row=0, column=0, padx=4)
-        ttk.Button(btns, text="Clear", command=self.on_patients_clear).grid(row=0, column=1, padx=4)
-        ttk.Button(btns, text="New Patient", command=self.on_new_patient).grid(row=0, column=2, padx=4)
-        ttk.Button(btns, text="Delete Patient", command=self.on_delete_patient).grid(row=0, column=3, padx=4)
+
+        #Search inputs
+        ttk.Label(search_section, text="Patient Name:", font=("Segoe UI", 9, "bold")).grid(row=0, column=0, sticky="w", padx=(0,8))
+        name_entry = ttk.Entry(search_section, textvariable=self.var_p_name, font=("Segoe UI", 9))
+        name_entry.grid(row=0, column=1, sticky="ew", padx=(0,20))
+
+        ttk.Label(search_section, text="Phone Number:", font=("Segoe UI", 9, "bold")).grid(row=0, column=2, sticky="w", padx=(0,8))
+        phone_entry = ttk.Entry(search_section, textvariable=self.var_p_phone, font=("Segoe UI", 9))
+        phone_entry.grid(row=0, column=3, sticky="ew", padx=(0,20))
+
+        # Search Button
+        btn_frame = ttk.Frame(search_section)
+        btn_frame.grid(row=0, column=4, padx=(10,0))
+
+        search_btn = ttk.Button(btn_frame, text="Search", command=self.on_patients_search)
+        search_btn.grid(row=0, column=0, padx=2)
+
+        clear_btn = ttk.Button(btn_frame, text="Clear", command=self.on_patients_clear)
+        clear_btn.grid(row=0, column=1, padx=2)
+
+        # Bind Enter key to search
+        name_entry.bind('<Return>', lambda e: self.on_patients_search())
+        phone_entry.bind('<Return>', lambda e: self.on_patients_search())
+        
         
         # Patient form
-        row += 1
-        form = ttk.LabelFrame(f, text="Patient Details")
-        form.grid(row=row, column=0, columnspan=4, sticky="ew", padx=4, pady=8)
-        for i in range(0, 4):
-            form.columnconfigure(i, weight=1)
         
+        form_section = ttk.LabelFrame(f, text="Patient Information", padding=15)
+        form_section.grid(row=1, column=0, sticky="ew", pady=(0, 10))
+
+        # Configure form grid
+        for i in range(0, 6):
+            form_section.columnconfigure(i, weight=1)
+            
+        # Initialize variables
         self.var_first = tk.StringVar()
         self.var_last = tk.StringVar()
         self.var_gender = tk.StringVar()
@@ -220,76 +250,137 @@ class ClinicApp(tk.Tk):
         self.var_email = tk.StringVar()
         self.var_address = tk.StringVar()
         
-        ttk.Label(form, text="First Name *").grid(row=0, column=0, sticky="w")
-        ttk.Entry(form, textvariable=self.var_first).grid(row=0, column=1, sticky="ew", padx=4, pady=4)
-        ttk.Label(form, text="Last Name *").grid(row=0, column=2, sticky="w")
-        ttk.Entry(form, textvariable=self.var_last).grid(row=0, column=3, sticky="ew", padx=4, pady=4)
+        ttk.Label(form_section, text="First Name *:", font=("Segoe UI", 9, "bold")).grid(row=0, column=0, sticky="w", pady=5)
+        first_entry = ttk.Entry(form_section, textvariable=self.var_first, font=("Segoe UI", 9))
+        first_entry.grid(row=0, column=1, sticky="ew", padx=(5, 15), pady=5)
         
-        ttk.Label(form, text="Gender").grid(row=1, column=0, sticky="w")
-        ttk.Combobox(form, textvariable=self.var_gender, values=("Male", "Female", "Other"), state="readonly") \
-            .grid(row=1, column=1, sticky="ew", padx=4, pady=4)
+        ttk.Label(form_section, text="Last Name *", font=("Segoe UI", 9, "bold")).grid(row=0, column=2, sticky="w", pady=5)
+        last_entry = ttk.Entry(form_section, textvariable=self.var_last, font=("Segoe UI", 9))
+        last_entry.grid(row=0, column=3, sticky="ew", padx=(5, 15), pady=5)
         
-        ttk.Label(form, text="Date of Birth (YYYY-MM-DD)").grid(row=1, column=2, sticky="w")
-        ttk.Entry(form, textvariable=self.var_dob).grid(row=1, column=3, sticky="ew", padx=4, pady=4)
+        ttk.Label(form_section, text="Gender", font=("Segoe UI", 9, "bold")).grid(row=1, column=0, sticky="w", pady=5)
+        gender_combo = ttk.Combobox(form_section, textvariable=self.var_gender, values=("Male", "Female", "Other"), state="readonly", font=("Segoe UI", 9))
+        gender_combo.grid(row=1, column=1, sticky="ew", padx=(5, 15), pady=5)
         
-        ttk.Label(form, text="Phone").grid(row=2, column=0, sticky="w")
-        ttk.Entry(form, textvariable=self.var_phone).grid(row=2, column=1, sticky="ew", padx=4, pady=4)
-        ttk.Label(form, text="Email").grid(row=2, column=2, sticky="w")
-        ttk.Entry(form, textvariable=self.var_email).grid(row=2, column=3, sticky="ew", padx=4, pady=4)        
-        ttk.Label(form, text="Address").grid(row=3, column=0, sticky="w")
-        ttk.Entry(form, textvariable=self.var_address).grid(row=3, column=1, columnspan=3, sticky="ew", padx=4, pady=4)
+        ttk.Label(form_section, text="Date of Birth:", font=("Segoe UI", 9, "bold")).grid(row=1, column=2, sticky="w", pady=5)
+        dob_frame = ttk.Frame(form_section)
+        dob_frame.grid(row=1, column=3, sticky="ew", padx=(5, 15), pady=5)
+        dob_frame.columnconfigure(0, weight=1)        
+        dob_entry = ttk.Entry(dob_frame, textvariable=self.var_dob, font=("Segoe UI", 9))
+        dob_entry.grid(row=0, column=0, sticky="ew", padx=(0, 15))
+        ttk.Label(dob_frame, text="YYYY-MM-DD", font=("Segoe UI", 8), foreground="gray").grid(row=0, column=1)
+        
+        #Row 3: Contact Information
+        ttk.Label(form_section, text="Phone *:", font=("Segoe UI", 9, "bold")).grid(row=2, column=0, sticky="w", pady=5)
+        phone_form_entry = ttk.Entry(form_section, textvariable=self.var_phone, font=("Segoe UI", 9))
+        phone_form_entry.grid(row=2, column=1, sticky="ew", padx=(5, 15), pady=5)
+
+        ttk.Label(form_section, text="Email:", font=("Segoe UI", 9, "bold")).grid(row=2, column=2, sticky="w", pady=5)
+        email_entry = ttk.Entry(form_section, textvariable=self.var_email, font=("Segoe UI", 9))
+        email_entry.grid(row=2, column=3, sticky="ew", padx=(5, 15), pady=5)
+
+        ttk.Label(form_section, text="Address:", font=("Segoe UI", 9, "bold")).grid(row=3, column=0, sticky="w", pady=5)
+        address_entry = ttk.Entry(form_section, textvariable=self.var_address, font=("Segoe UI", 9))
+        address_entry.grid(row=3, column=1, sticky="ew", padx=(5, 15), pady=5)
         
         # Patient list + Case history
-        row += 1
-        split = ttk.Frame(f)
-        split.grid(row=row, column=0, columnspan=4, sticky="nsew")
-        f.rowconfigure(row, weight=1)
-        split.columnconfigure(0, weight=1)
-        split.columnconfigure(1, weight=1)
+        # Action buttons for patient form
+        action_frame = ttk.Frame(form_section)
+        action_frame.grid(row=4, column=0, columnspan=4 , pady=(15,5))
+
+        new_btn = ttk.Button(action_frame, text = "New Patient", command=self.on_new_patient)
+        new_btn.grid(row=0, column=0,padx=5)
+
+        save_btn = ttk.Button(action_frame, text = "Save Patient", command=self.on_save_patient)
+        save_btn.grid(row=0, column=1,padx=5)
+
+        delete_btn = ttk.Button(action_frame, text = "Delete Patient", command=self.on_delete_patient)
+        delete_btn.grid(row=0, column=2,padx=5)
+
+        # ==== MAIN CONTENT SECTION ===
+        content_section = ttk.Frame(f)
+        content_section.grid(row=2, column=0, sticky="nsew", pady=(0,0))
+        content_section.columnconfigure(0, weight=1)
+        content_section.columnconfigure(1, weight=1)
+        content_section.rowconfigure(0, weight=1)
+
+        #Left side Patients List
+        patient_frame = ttk.LabelFrame(content_section, text="Patient List", padding=10)
+        patient_frame.grid(row=0, column=0, sticky="nsew", pady=(0,5))
+        patient_frame.columnconfigure(0, weight=1)
+        patient_frame.rowconfigure(0, weight=1)        
         
-        # Patients tree
+        
+        # Patients treeview
         p_cols = ("id", "first_name", "last_name", "phone", "email", "dob")
-        self.p_tree = ttk.Treeview(split, columns=p_cols, show="headings", height=12)
+        self.p_tree = ttk.Treeview(patient_frame, columns=p_cols, show="headings", height=15)
         headers = {
-            "id": "ID", "first_name": "First", "last_name": "Last",
+            "id": "ID", "first_name": "First Name", "last_name": "Last Name",
             "phone": "Phone", "email": "Email", "dob": "DOB"
         }
-        widths = (60, 120, 120, 120, 160, 100)
-        for (c, w) in zip(p_cols, widths):
-            self.p_tree.heading(c, text=headers[c])
-            self.p_tree.column(c, width=w, anchor="center")
-        self.p_tree.grid(row=0, column=0, sticky="nsew", padx=4, pady=4)
+        widths = (50, 120, 120, 120, 180, 100)
+        for (col, width) in zip(p_cols, widths):
+            self.p_tree.heading(col, text=headers[col], anchor="w")
+            self.p_tree.column(col, width=width, anchor="w" if col in ["first_name","last_name","email"] else "center")
+        #Hide ID column for clener look
+        self.p_tree.column("id", width=0, stretch=False)
+        self.p_tree.heading("id", text="")
+        self.p_tree.grid(row=0, column=0, sticky="nsew")
         self.p_tree.bind("<<TreeviewSelect>>", self.on_patient_selected)
-        yscroll_p = ttk.Scrollbar(split, orient="vertical", command=self.p_tree.yview)
-        yscroll_p.grid(row=0, column=1, sticky="nse")
-        self.p_tree.configure(yscrollcommand=yscroll_p.set)
+        p_scroll_v = ttk.Scrollbar(patient_frame, orient="vertical", command=self.p_tree.yview)
+        p_scroll_v.grid(row=0, column=1, sticky="ns")
+        self.p_tree.configure(yscrollcommand=p_scroll_v.set)
+        p_scroll_h = ttk.Scrollbar(patient_frame, orient="horizontal", command=self.p_tree.xview)
+        p_scroll_h.grid(row=1, column=0, sticky="ew")
+        self.p_tree.configure(xscrollcommand=p_scroll_h.set)
+
+        #Rightt side - Case History
+        history_frame = ttk.LabelFrame(content_section, text="Case History", padding=10)
+        history_frame.grid(row=0, column=1, sticky="nsew", pady=(0,5))
+        history_frame.columnconfigure(0, weight=1)
+        history_frame.rowconfigure(0, weight=1)
         
         # Case history tree (for selected patient)
         c_cols = ("case_id", "date", "follow_up", "chief", "diagnosis", "status", "items")
-        self.c_tree = ttk.Treeview(split, columns=c_cols, show="headings", height=12)
+        self.c_tree = ttk.Treeview(history_frame, columns=c_cols, show="headings", height=15)
         c_headers = {
             "case_id": "Case ID", "date": "Date", "follow_up": "Follow-up",
             "chief": "Chief Complaint", "diagnosis": "Diagnosis", "status": "Status", "items": "Plan Items"
         }
-        c_widths = (80, 100, 110, 200, 80)
-        for (c, w) in zip(c_cols, c_widths):
-            self.c_tree.heading(c, text=c_headers[c])
-            self.c_tree.column(c, width=w, anchor="center")
-        self.c_tree.grid(row=0, column=1, sticky="nsew", padx=4, pady=4)
-        yscroll_c = ttk.Scrollbar(split, orient="vertical", command=self.c_tree.yview)
-        yscroll_c.grid(row=0, column=1, sticky="nse")
-        self.c_tree.configure(yscrollcommand=yscroll_c.set)
+        c_widths = (0, 90, 90, 100, 180, 80, 80) #Hide case_id
+        for (col, width) in zip(c_cols, c_widths):
+            self.c_tree.heading(col, text=c_headers[col], anchor="w")
+            self.c_tree.column(col, width=width, anchor="c" if col in ["diagnosis","chief"] else "center")
+
+        #Hide case id column
+        self.c_tree.column("case_id", width=0, stretch=False)
+        self.c_tree.heading("case_id", text="")
+        self.c_tree.grid(row=0, column=0, sticky="nsew")
+        
+        # Scrollbars for case hitory
+        cscroll_v = ttk.Scrollbar(history_frame, orient="vertical", command=self.c_tree.yview)
+        cscroll_v.grid(row=0, column=1, sticky="ns")
+        self.c_tree.configure(yscrollcommand=cscroll_v.set)
+        
+        cscroll_h = ttk.Scrollbar(history_frame, orient="horizontal", command=self.c_tree.xview)
+        cscroll_h.grid(row=1, column=0, sticky="ew")
+        self.c_tree.configure(xscrollcommand=cscroll_h.set)
         
         # Case history actions
-        act = ttk.Frame(f)
-        act.grid(row=row+1, column=0, columnspan=4, sticky="ew")
-        ttk.Button(act, text="Open Selected Case", command=self.on_open_selected_history_case).grid(row=0, column=0, padx=4)
-        ttk.Button(act, text="New Case for Selected Patient", command=self.on_new_case_for_selected_patient).grid(row=0, column=1, padx=4)
+        case_actions = ttk.Frame(history_frame)
+        case_actions.grid(row=2, column=0, columnspan=2, pady=(10,0))
+        ttk.Button(case_actions, text="Open Selected Case", command=self.on_open_selected_history_case).grid(row=0, column=0, padx=5)
+        ttk.Button(case_actions, text="New Case for Selected Patient", command=self.on_new_case_for_selected_patient).grid(row=0, column=1, padx=5)
         
         # Initial load
-        self.on_patients_search()
+        # Focus on first name field initiaally
+        first_entry.focus()
+
+        #Load ptients on startup
+        self.after_idle(self.on_patients_search)
     
     def on_patients_search(self):
+        # Clear existing items
         for iid in self.p_tree.get_children():
             self.p_tree.delete(iid)
         
@@ -309,24 +400,37 @@ class ClinicApp(tk.Tk):
             params.append(f"%{phone}%")
     
         sql = f"""
-            SELECT id, first_name, last_name, phone, email, dob
+            SELECT id, first_name, last_name,
+            COALESCE(phone, '') as phone,
+            COALESCE(email, '') as email,
+            COALESCE(dob, '') as dob
             FROM patients
             WHERE {' AND '.join(where)}
             ORDER BY last_name, first_name
             LIMIT 500
-        """
-        
-        print(f"Debug - SQL: {sql}")  # Debug line
-        print(f"Debug - Params: {params}")  # Debug line
-        
-        conn = sqlite3.connect(DB_FILE)
-        rows = conn.execute(sql, params).fetchall()
-        conn.close()
-        
-        print(f"Debug - Found {len(rows)} results")  # Debug line
-        
-        for r in rows:
-            self.p_tree.insert("", "end", values=r)
+        """  
+       
+        try:            
+            conn = sqlite3.connect(DB_FILE)
+            rows = conn.execute(sql, params).fetchall()
+            conn.close()        
+                    
+            for r in rows:
+                self.p_tree.insert("", "end", values=r)
+
+            if len(rows) == 0 and not name and not phone:                
+                conn = sqlite3.connect(DB_FILE)                
+                total_count = conn.execute("SELECT COUNT(*) FROM patients").fetchone()[0]
+                print("Debug: No patients found in database")
+                conn.close()
+                if total_count == 0:
+                    print("Debug: No patients found in database")
+                else:
+                    print(f"Debug : Found {total_count} total patients found but none match criteria")
+            else:
+                print(f"Debug : Loaded {len(rows)} patients into tree")
+        except sqlite3.Error as e:
+            messagebox.showerror("Database error",f"Could not search patients.\n{e}")
 
     def on_patients_clear(self):
         self.var_p_name.set("")
@@ -342,6 +446,11 @@ class ClinicApp(tk.Tk):
         self.var_phone.set("")
         self.var_email.set("")
         self.var_address.set("")
+        #cler tree selection
+        for item in self.p_tree.selection():
+            self.p_tree.selection_remove(item)
+        # clear case history
+        self.clear_case_history()
         self.nb.select(self.tab_patients)
 
     def on_delete_patient(self):
@@ -394,7 +503,7 @@ class ClinicApp(tk.Tk):
         self.clear_case_history()
         sql = (
             "SELECT c.id, c.op_number, c.case_date, c.follow_up_date, c.chief_complaint, c.diagnosis, c.case_status, "
-            "'(select count(*) from treatment_plans tp where tp.case_id = c.id) AS items' "
+            "(select count(*) from treatment_plans tp where tp.case_id = c.id) AS items "
             "FROM cases c WHERE c.patient_id = ? ORDER BY c.case_date DESC, c.id DESC"
         )
         conn = sqlite3.connect(DB_FILE)
@@ -461,28 +570,42 @@ class ClinicApp(tk.Tk):
                 raise ValueError("First Name is required.")
             if not safe_str(self.var_last.get()):
                 raise ValueError("Last Name is required.")
-            
-            dob = safe_str(self.var_dob.get())
+            if not safe_str(self.var_phone.get()) or len(safe_str(self.var_phone.get())) != 10:
+                raise ValueError("Phone Number is empty or length of the number should be equal to 10.")
+
+            #Get all field values
+            first_name = safe_str(self.var_first.get())
+            last_name = safe_str(self.var_last.get())
+            gender = safe_str(self.var_gender.get()) or None
+            dob = safe_str(self.var_dob.get()) or None
+            phone = safe_str(self.var_phone.get()) or None
+            emil = safe_str(self.var_email.get()) or None
+            address = safe_str(self.var_address.get()) or None
+             
             if dob:
                 parse_date(dob)
             
             conn = sqlite3.connect(DB_FILE)
-            with conn:
+            #with conn:
+            conn.execute("PRAGMA foreign_keys = ON;")
+            try:
                 if self.current_patient_id is None:
-                    conn.execute(
+                    # Insert new patient
+                    cursor = conn.execute(
                         """
                         INSERT INTO patients(first_name, last_name, gender, dob, phone, email, address)
                         VALUES(?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
-                            safe_str(self.var_first.get()), safe_str(self.var_last.get()),
-                            safe_str(self.var_gender.get()), dob,
-                            safe_str(self.var_phone.get()), safe_str(self.var_email.get()),
-                            safe_str(self.var_address.get())
+                            first_name, last_name, gender, dob, phone, emil, address 
                         )
                     )
-                    self.current_patient_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+                    #self.current_patient_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+                    conn.commit() # Explicitly commit transaction
+                    self.current_patient_id = cursor.lastrowid
+                    message = "New patient created successfully"
                 else:
+                    # Update existing patient
                     conn.execute(
                         """
                         UPDATE patients
@@ -490,23 +613,16 @@ class ClinicApp(tk.Tk):
                         WHERE id=?
                         """,
                         (
-                            safe_str(self.var_first.get()), safe_str(self.var_last.get()),
-                            safe_str(self.var_gender.get()), dob,
-                            safe_str(self.var_phone.get()), safe_str(self.var_email.get()),
-                            safe_str(self.var_address.get()), self.current_patient_id
+                            first_name, last_name, gender, dob, phone, emil, address,self.current_patient_id
                         )
                     )
-            
-            conn.close()
-            messagebox.showinfo("Saved", "Patient saved.")
+                    conn.commit() # Explicitly commit transaction
+                    message = "Paatient information updted successfully"    
+            finally:
+                conn.close()
+            messagebox.showinfo("Saved", message)
+            # Refresh the patient list to show new/updated patient
             self.on_patients_search()
-            # Auto-select the saved patient in the tree
-            for iid in self.p_tree.get_children():
-                vals = self.p_tree.item(iid, "values")
-                if int(vals[0]) == self.current_patient_id:
-                    self.p_tree.selection_set(iid)
-                    self.p_tree.see(iid)
-                    break
         except ValueError as e:
             messagebox.showerror("Validation Error", str(e))
         except sqlite3.Error as e:
@@ -532,14 +648,14 @@ class ClinicApp(tk.Tk):
         v_scrollbar.pack(side="right", fill="y")
 
         # Configure content frame
-        for i in range(4):
-            content_frame.columnconfigure(i, weight=1)
+        content_frame.columnconfigure(0, weight=1)
+        content_frame.columnconfigure(1, weight=1)
         
         row = 0
         
         # === CASE INFORMATION SECTION ===
-        case_info_frame = ttk.LabelFrame(content_frame, text="Case Information", padding=10)
-        case_info_frame.grid(row=row, column=0, columnspan=4, sticky="ew", padx=8, pady=5)
+        case_info_frame = ttk.LabelFrame(content_frame, text="Case Information", padding=15)
+        case_info_frame.grid(row=row, column=0, columnspan=2, sticky="ew", padx=5, pady=(5,10))
         for i in range(4):
             case_info_frame.columnconfigure(i, weight=1)
         
@@ -549,94 +665,143 @@ class ClinicApp(tk.Tk):
         self.var_op_number = tk.StringVar(value="")
         
         # First row: OP Number and Case Date
-        ttk.Label(case_info_frame, text="OP Number *").grid(row=0, column=0, sticky="w")
-        ttk.Entry(case_info_frame, textvariable=self.var_op_number, width=20).grid(row=0, column=1, sticky="w", padx=4, pady=4)
+        ttk.Label(case_info_frame, text="OP Number *", font=("Segoe UI", 9, "bold")).grid(row=0, column=0, sticky="w")
+        ttk.Entry(case_info_frame, textvariable=self.var_op_number, font=("Segoe UI", 10)).grid(row=0, column=1, sticky="ew", padx=(5, 15), pady=5)
         
-        ttk.Label(case_info_frame, text="Case Date (YYYY-MM-DD)").grid(row=0, column=2, sticky="w")
-        ttk.Entry(case_info_frame, textvariable=self.var_case_date, width=20).grid(row=0, column=3, sticky="w", padx=4, pady=4)
+        ttk.Label(case_info_frame, text="Case Date (YYYY-MM-DD)", font=("Segoe UI", 9, "bold")).grid(row=0, column=2, sticky="w", pady=5)
+        ttk.Entry(case_info_frame, textvariable=self.var_case_date, font=("Segoe UI", 10)).grid(row=0, column=3, sticky="ew", padx=(5, 0), pady=5)
         
         # Second row: Follow-up Date and Case Status
-        ttk.Label(case_info_frame, text="Follow-up Date (YYYY-MM-DD)").grid(row=1, column=0, sticky="w")
-        ttk.Entry(case_info_frame, textvariable=self.var_followup_date, width=20).grid(row=1, column=1, sticky="w", padx=4, pady=4)
+        ttk.Label(case_info_frame, text="Follow-up Date (YYYY-MM-DD)", font=("Segoe UI", 9, "bold")).grid(row=1, column=0, sticky="w", pady=5)
+        ttk.Entry(case_info_frame, textvariable=self.var_followup_date, font=("Segoe UI", 10)).grid(row=1, column=1, sticky="ew", padx=(5, 15), pady=5)
         
-        ttk.Label(case_info_frame, text="Case Status").grid(row=1, column=2, sticky="w")
-        ttk.Combobox(case_info_frame, textvariable=self.var_case_status,
+        ttk.Label(case_info_frame, text="Case Status", font=("Segoe UI", 9, "bold")).grid(row=1, column=2, sticky="w", pady=5)
+        status_combo = ttk.Combobox(case_info_frame, textvariable=self.var_case_status,
             values=("Open", "In Progress", "Closed", "Cancelled"),
-            state="readonly", width=15).grid(row=1, column=3, sticky="w", padx=4, pady=4)
+            state="readonly", font=("Segoe UI", 10))
+        status_combo.grid(row=1, column=3, sticky="ew", padx=(5, 0), pady=5)
         
         # Third row: Chief Complaint
-        ttk.Label(case_info_frame, text="Chief Complaint *").grid(row=2, column=0, sticky="w")
-        self.entry_cc = ttk.Entry(case_info_frame)
-        self.entry_cc.grid(row=2, column=1, columnspan=3, sticky="ew", padx=4, pady=4)
+        ttk.Label(case_info_frame, text="Chief Complaint *", font=("Segoe UI", 9, "bold")).grid(row=2, column=0, sticky="w", pady=(10, 5))
+        self.entry_cc = ttk.Entry(case_info_frame, font=("Segoe UI", 10))
+        self.entry_cc.grid(row=2, column=1, columnspan=3, sticky="ew", padx=(5, 0), pady=5)
         
         row += 1
         
         # === MEDICAL & DENTAL HISTORY SECTION ===
-        history_frame = ttk.LabelFrame(content_frame, text="Medical & Dental History", padding=10)
-        history_frame.grid(row=row, column=0, columnspan=4, sticky="nsew", padx=5, pady=5)
-        for i in range(2):
-            history_frame.columnconfigure(i, weight=1)
+        history_frame = ttk.LabelFrame(content_frame, text="Medical & Dental History", padding=15)
+        history_frame.grid(row=row, column=0, columnspan=2, sticky="ew", padx=5, pady=(0,10))
+        history_frame.columnconfigure(0, weight=1)
+        history_frame.columnconfigure(1, weight=1)
+                
+        ttk.Label(history_frame, text="Past Medical History", font=("Segoe UI", 9, "bold")).grid(row=0, column=0, sticky="w", pady=(0, 5))
+        ttk.Label(history_frame, text="Include previous surgeries, medications, allergies, chroic conditions", font=("Segoe UI", 8),
+                  foreground="gray").grid(row=1, column=0, sticky="w", pady=(0, 5))
+        med_frame = ttk.Frame(history_frame)
+        med_frame.grid(row=2, column=0, sticky="nsew", padx=(0, 5))
+        med_frame.columnconfigure(0, weight=1)
+        med_frame.rowconfigure(0, weight=1)
         
-        ttk.Label(history_frame, text="Past Medical History").grid(row=0, column=0, sticky="w")
-        self.txt_medical_history = tk.Text(history_frame, height=4, wrap="word")
-        self.txt_medical_history.grid(row=1, column=0, sticky="nsew", padx=(0, 5), pady=4)
+        self.txt_medical_history = tk.Text(med_frame, height=6, wrap="word", font=("Segoe UI", 10))
+        self.txt_medical_history.grid(row=0, column=0, sticky="nsew")
+        med_scroll = ttk.Scrollbar(med_frame, orient="vertical", command=self.txt_medical_history.yview)
+        med_scroll.grid(row=0, column=1, sticky="ns")
+        self.txt_medical_history.configure(yscrollcommand=med_scroll.set)
         
-        ttk.Label(history_frame, text="Past Dental History").grid(row=0, column=1, sticky="w")
-        self.txt_dental_history = tk.Text(history_frame, height=4, wrap="word")
-        self.txt_dental_history.grid(row=1, column=1, sticky="nsew", padx=(5, 0), pady=4)
         
-        history_frame.rowconfigure(1, weight=1)
+        ttk.Label(history_frame, text="Past Dental History", font=("Segoe UI", 9, "bold")).grid(row=0, column=1, sticky="w", pady=(0, 5))
+        ttk.Label(history_frame, text="Include previous dental treatments, oral hygiene, dental concerns", font=("Segoe UI", 8),
+                  foreground="gray").grid(row=1, column=1, sticky="w", pady=(0, 5))
+        dent_frame = ttk.Frame(history_frame)
+        dent_frame.grid(row=2, column=1, sticky="nsew", padx=(5, 0))
+        dent_frame.columnconfigure(0, weight=1)
+        dent_frame.rowconfigure(0, weight=1)
+        self.txt_dental_history = tk.Text(dent_frame, height=4, wrap="word", font=("Segoe UI", 10))
+        self.txt_dental_history.grid(row=0, column=0, sticky="nsew")
+        dent_scroll = ttk.Scrollbar(dent_frame, orient="vertical", command=self.txt_dental_history.yview)
+        dent_scroll.grid(row=0, column=1, sticky="ns")
+        self.txt_dental_history.configure(yscrollcommand=dent_scroll.set)
+        
+        history_frame.rowconfigure(2, weight=1)
         
         row += 1
         
         # === CLINICAL EXAMINATION SECTION ===
-        exam_frame = ttk.LabelFrame(content_frame, text="Clinical Examination & Diagnosis", padding=10)
-        exam_frame.grid(row=row, column=0, columnspan=4, sticky="nsew", padx=5, pady=5)
-        for i in range(2):
-            exam_frame.columnconfigure(i, weight=1)
         
-        ttk.Label(exam_frame, text="Extra & Intra Oral Examinations").grid(row=0, column=0, sticky="w")
-        self.txt_exam = tk.Text(exam_frame, height=5, wrap="word")
-        self.txt_exam.grid(row=1, column=0, sticky="nsew", padx=(0, 5), pady=4)
+        exam_frame = ttk.LabelFrame(content_frame, text="Clinical Examination & Diagnosis", padding=15)
+        exam_frame.grid(row=row, column=0, columnspan=2, sticky="ew", padx=5, pady=(0,10))
+        exam_frame.columnconfigure(0, weight=1)
+        exam_frame.columnconfigure(1, weight=1)
+                
+        ttk.Label(exam_frame, text="Clinical Examination", font=("Segoe UI", 9, "bold")).grid(row=0, column=0, sticky="w", pady=(0, 5))
+        ttk.Label(exam_frame, text="Extra-oral and intra-oral exmination findings", font=("Segoe UI", 8),
+                  foreground="gray").grid(row=1, column=0, sticky="w", pady=(0, 5))
+        exam_text_frame = ttk.Frame(exam_frame)
+        exam_text_frame.grid(row=2, column=0, sticky="nsew", padx=(0, 5))
+        exam_text_frame.columnconfigure(0, weight=1)
+        exam_text_frame.rowconfigure(0, weight=1)
         
-        ttk.Label(exam_frame, text="Diagnosis").grid(row=0, column=1, sticky="w")
-        self.txt_dx = tk.Text(exam_frame, height=5, wrap="word")
-        self.txt_dx.grid(row=1, column=1, sticky="nsew", padx=(5, 0), pady=4)
+        self.txt_exam = tk.Text(exam_text_frame, height=8, wrap="word", font=("Segoe UI", 10))
+        self.txt_exam.grid(row=0, column=0, sticky="nsew")
+        exam_scroll = ttk.Scrollbar(exam_text_frame, orient="vertical", command=self.txt_exam.yview)
+        exam_scroll.grid(row=0, column=1, sticky="ns")
+        self.txt_exam.configure(yscrollcommand=exam_scroll.set)
+        
+        
+        ttk.Label(exam_frame, text="Diagnosis & Assessment", font=("Segoe UI", 9, "bold")).grid(row=0, column=1, sticky="w", pady=(0, 5))
+        ttk.Label(exam_frame, text="Clinical diagnosis and treatment recommendations", font=("Segoe UI", 8),
+                  foreground="gray").grid(row=1, column=1, sticky="w", pady=(0, 5))
+        dx_text_frame = ttk.Frame(exam_frame)
+        dx_text_frame.grid(row=2, column=1, sticky="nsew", padx=(5, 0))
+        dx_text_frame.columnconfigure(0, weight=1)
+        dx_text_frame.rowconfigure(0, weight=1)
+        
+        self.txt_dx = tk.Text(dx_text_frame, height=8, wrap="word", font=("Segoe UI", 10))
+        self.txt_dx.grid(row=0, column=0, sticky="nsew")
+        dx_scroll = ttk.Scrollbar(dx_text_frame, orient="vertical", command=self.txt_dx.yview)
+        dx_scroll.grid(row=0, column=1, sticky="ns")
+        self.txt_dx.configure(yscrollcommand=dx_scroll.set)
         
         exam_frame.rowconfigure(1, weight=1)
         
         row += 1
         
         # === CONSENT FORM SECTION ===
-        consent_frame = ttk.LabelFrame(content_frame, text="Patient Consent", padding=10)
-        consent_frame.grid(row=row, column=0, columnspan=4, sticky="ew", padx=5, pady=5)
-        for i in range(4):
-            consent_frame.columnconfigure(i, weight=1)
+        consent_frame = ttk.LabelFrame(content_frame, text="Patient Consent", padding=15)
+        consent_frame.grid(row=row, column=0, columnspan=2, sticky="ew", padx=5, pady=(0,10))
+        consent_frame.columnconfigure(2, weight=1)
         
         self.var_consent_obtained = tk.BooleanVar(value=False)
         self.var_consent_date = tk.StringVar(value="")
         self.var_consent_file = tk.StringVar(value="")
+
+        #Row 1 : Consent checkbox and date
+        consent_check = ttk.Checkbutton(consent_frame, text="Consent Obtained",
+            variable=self.var_consent_obtained, command=self.on_consent_changed)
+        consent_check.grid(row=0, column=0, sticky="w", padx=(0,20), pady=5)
         
-        ttk.Checkbutton(consent_frame, text="Consent Obtained",
-            variable=self.var_consent_obtained).grid(row=0, column=0, sticky="w", padx=4)
+        ttk.Label(consent_frame, text="Date:", font=("Segoe UI", 9, "bold")).grid(row=0, column=1, sticky="w", padx=(0,5))
+        consent_date_entry = ttk.Entry(consent_frame, textvariable=self.var_consent_date, width=15, font=("Segoe UI", 10))
+        consent_date_entry.grid(row=0, column=2, sticky="w", pady=5)
+
+        #Row 2: File selection        
+        ttk.Label(consent_frame, text="Consent Form File:", font=("Segoe UI", 9, "bold")).grid(row=1, column=0, sticky="w", pady=5)
         
-        ttk.Label(consent_frame, text="Consent Date").grid(row=0, column=1, sticky="w")
-        ttk.Entry(consent_frame, textvariable=self.var_consent_date, width=20).grid(row=0, column=2, sticky="w", padx=4, pady=4)
-        
-        ttk.Label(consent_frame, text="Consent Form").grid(row=1, column=0, sticky="w")
         consent_file_frame = ttk.Frame(consent_frame)
-        consent_file_frame.grid(row=1, column=1, columnspan=3, sticky="ew", padx=4, pady=4)
+        consent_file_frame.grid(row=1, column=1, columnspan=2, sticky="ew", pady=5)
         consent_file_frame.columnconfigure(0, weight=1)
         
-        ttk.Entry(consent_file_frame, textvariable=self.var_consent_file, state="readonly").grid(row=0, column=0, sticky="ew", padx=(0, 5))
-        ttk.Button(consent_file_frame, text="Browse", command=self.on_browse_consent_file).grid(row=0, column=1)
-        ttk.Button(consent_file_frame, text="View", command=self.on_view_consent_file).grid(row=0, column=2, padx=(5, 0))
+        file_entry = ttk.Entry(consent_file_frame, textvariable=self.var_consent_file, state="readonly", font=("Segoe UI", 9))
+        file_entry.grid(row=0, column=0, sticky="ew", padx=(0, 5))
+        
+        ttk.Button(consent_file_frame, text="Browse", command=self.on_browse_consent_file).grid(row=0, column=1, padx=2)
+        ttk.Button(consent_file_frame, text="View", command=self.on_view_consent_file).grid(row=0, column=2, padx=(2, 0))
         
         row += 1
         
         # === VITALS SECTION ===
-        vitals_frame = ttk.LabelFrame(content_frame, text="Vital Signs", padding=10)
-        vitals_frame.grid(row=row, column=0, columnspan=4, sticky="ew", padx=5, pady=5)
+        vitals_frame = ttk.LabelFrame(content_frame, text="Vital Signs", padding=15)
+        vitals_frame.grid(row=row, column=0, columnspan=2, sticky="ew", padx=5, pady=(0,10))
         for i in range(8):
             vitals_frame.columnconfigure(i, weight=1)
         
@@ -645,26 +810,37 @@ class ClinicApp(tk.Tk):
         self.var_temp = tk.StringVar()
         self.var_weight = tk.StringVar()
         
-        ttk.Label(vitals_frame, text="BP (e.g., 120/80)").grid(row=0, column=0, sticky="w")
-        ttk.Entry(vitals_frame, textvariable=self.var_bp, width=15).grid(row=0, column=1, sticky="w", padx=4, pady=4)
-        ttk.Label(vitals_frame, text="HR (bpm)").grid(row=0, column=2, sticky="w")
-        ttk.Entry(vitals_frame, textvariable=self.var_hr, width=10).grid(row=0, column=3, sticky="w", padx=4, pady=4)
-        ttk.Label(vitals_frame, text="Temp (°C)").grid(row=0, column=4, sticky="w")
-        ttk.Entry(vitals_frame, textvariable=self.var_temp, width=10).grid(row=0, column=5, sticky="w", padx=4, pady=4)
-        ttk.Label(vitals_frame, text="Weight (kg)").grid(row=0, column=6, sticky="w")
-        ttk.Entry(vitals_frame, textvariable=self.var_weight, width=10).grid(row=0, column=7, sticky="w", padx=4, pady=4)
-        
+        ttk.Label(vitals_frame, text="Blood Pressure:", font=("Segoe UI", 9, "bold")).grid(row=0, column=0, sticky="w", pady=5)
+        bp_entry = ttk.Entry(vitals_frame, textvariable=self.var_bp, width=12, font=("Segoe UI", 10))
+        bp_entry.grid(row=0, column=1, sticky="w", padx=(5,15), pady=5)
+        ttk.Label(vitals_frame, text="(mmHg)", font=("Segoe UI", 8),foreground="gray").grid(row=0, column=2, sticky="w")
+
+        ttk.Label(vitals_frame, text="Heart Rate:", font=("Segoe UI", 9, "bold")).grid(row=0, column=3, sticky="w", pady=5)
+        hr_entry = ttk.Entry(vitals_frame, textvariable=self.var_hr, width=12, font=("Segoe UI", 10))
+        hr_entry.grid(row=0, column=4, sticky="w", padx=(5, 10), pady=5)
+        ttk.Label(vitals_frame, text="bpm", font=("Segoe UI", 8),foreground="gray").grid(row=0, column=5, sticky="w")
+
+        ttk.Label(vitals_frame, text="RBS Level:", font=("Segoe UI", 9, "bold")).grid(row=1, column=0, sticky="w", pady=5)
+        temp_entry = ttk.Entry(vitals_frame, textvariable=self.var_temp, width=8, font=("Segoe UI", 10))
+        temp_entry.grid(row=1, column=1, sticky="w", padx=(5, 10), pady=5)
+        ttk.Label(vitals_frame, text="(mg/dl)", font=("Segoe UI", 8),foreground="gray").grid(row=1, column=2, sticky="w")
+
+        ttk.Label(vitals_frame, text="Weight:", font=("Segoe UI", 9, "bold")).grid(row=1, column=3, sticky="w", pady=5)
+        weight_entry = ttk.Entry(vitals_frame, textvariable=self.var_weight, width=8, font=("Segoe UI", 10))
+        weight_entry.grid(row=1, column=4, sticky="w", padx=(5,10), pady=5)
+        ttk.Label(vitals_frame, text="kg", font=("Segoe UI", 8),foreground="gray").grid(row=1, column=5, sticky="w")
+                
         row += 1
         
         # === TREATMENT PLAN SECTION ===
-        treatment_frame = ttk.LabelFrame(content_frame, text="Treatment Plan", padding=10)
-        treatment_frame.grid(row=row, column=0, columnspan=4, sticky="nsew", padx=5, pady=5)
-        for i in range(4):
-            treatment_frame.columnconfigure(i, weight=1)
+        treatment_frame = ttk.LabelFrame(content_frame, text="Treatment Plan", padding=15)
+        treatment_frame.grid(row=row, column=0, columnspan=2, sticky="nsew", padx=5, pady=(0,10))
+        treatment_frame.columnconfigure(0, weight=1)
         
         # Treatment plan input fields
         plan_input_frame = ttk.Frame(treatment_frame)
-        plan_input_frame.grid(row=0, column=0, columnspan=4, sticky="ew", padx=(0, 10))
+        plan_input_frame.grid(row=0, column=0, sticky="ew", pady=(0, 15))
+                      
         for i in range(4):
             plan_input_frame.columnconfigure(i, weight=1)
         
@@ -677,72 +853,103 @@ class ClinicApp(tk.Tk):
         self.var_status = tk.StringVar(value="Planned")
         self.var_notes = tk.StringVar()
         self.editing_plan_index = None
+
+        #Row 1 Type and Name        
+        ttk.Label(plan_input_frame, text="Type:",font=("Segoe UI", 9, "bold")).grid(row=0, column=0, sticky="w", pady=5)
+        type_combo = ttk.Combobox(plan_input_frame, textvariable=self.var_item_type,
+            values=("Medication", "Procedure", "Test", "Advice"), state="readonly", font=("Segoe UI", 10))
+        type_combo.grid(row=0, column=1, sticky="ew", padx=(5,15), pady=5)
+       
+        ttk.Label(plan_input_frame, text="Name *:",font=("Segoe UI", 9, "bold")).grid(row=0, column=2, sticky="w", pady=5)
+        name_entry = ttk.Entry(plan_input_frame, textvariable=self.var_name, font=("", 10))
+        name_entry.grid(row=0, column=3, sticky="ew", padx=(5,0), pady=5)
+
+        #Row 2 Dosage and Frequency
+        ttk.Label(plan_input_frame, text="Dosage:",font=("Segoe UI", 9, "bold")).grid(row=1, column=0, sticky="w", pady=5)
+        dosge_entry = ttk.Entry(plan_input_frame, textvariable=self.var_dosage, font=("Segoe UI", 10))
+        dosge_entry.grid(row=1, column=1, sticky="ew", padx=(5,0), pady=5)
+
+        ttk.Label(plan_input_frame, text="Frequency:",font=("Segoe UI", 9, "bold")).grid(row=1, column=2, sticky="w", pady=5)
+        freq_entry = ttk.Entry(plan_input_frame, textvariable=self.var_frequency, font=("Segoe UI", 10))
+        freq_entry.grid(row=1, column=3, sticky="ew", padx=(5,0), pady=5)
         
-        ttk.Label(plan_input_frame, text="Type").grid(row=0, column=0, sticky="w")
-        ttk.Combobox(plan_input_frame, textvariable=self.var_item_type,
-            values=("Medication", "Procedure", "Test", "Advice"), state="readonly") \
-            .grid(row=0, column=1, sticky="ew", padx=4, pady=4)
+        #Row 3 Duration and Start Date
+        ttk.Label(plan_input_frame, text="Duration (days):",font=("Segoe UI", 9, "bold")).grid(row=2, column=0, sticky="w", pady=5)
+        duration_entry = ttk.Entry(plan_input_frame, textvariable=self.var_duration, font=("Segoe UI", 10))
+        duration_entry.grid(row=2, column=1, sticky="ew", padx=(5,15), pady=5)
+
+        ttk.Label(plan_input_frame, text="Start Date:",font=("Segoe UI", 9, "bold")).grid(row=2, column=2, sticky="w", pady=5)
+        start_entry = ttk.Entry(plan_input_frame, textvariable=self.var_start, font=("Segoe UI", 10))
+        start_entry.grid(row=2, column=3, sticky="ew", padx=(5,0), pady=5)
+
+        #Row 4 status and notes
         
-        ttk.Label(plan_input_frame, text="Name *").grid(row=0, column=2, sticky="w")
-        ttk.Entry(plan_input_frame, textvariable=self.var_name).grid(row=0, column=3, sticky="ew", padx=4, pady=4)
-        
-        ttk.Label(plan_input_frame, text="Dosage").grid(row=1, column=0, sticky="w")
-        ttk.Entry(plan_input_frame, textvariable=self.var_dosage).grid(row=1, column=1, sticky="ew", padx=4, pady=4)
-        
-        ttk.Label(plan_input_frame, text="Frequency").grid(row=1, column=2, sticky="w")
-        ttk.Entry(plan_input_frame, textvariable=self.var_frequency).grid(row=1, column=3, sticky="ew", padx=4, pady=4)
-        
-        ttk.Label(plan_input_frame, text="Duration (days)").grid(row=2, column=0, sticky="w")
-        ttk.Entry(plan_input_frame, textvariable=self.var_duration).grid(row=2, column=1, sticky="ew", padx=4, pady=4)
-        
-        ttk.Label(plan_input_frame, text="Start Date").grid(row=2, column=2, sticky="w")
-        ttk.Entry(plan_input_frame, textvariable=self.var_start).grid(row=2, column=3, sticky="ew", padx=4, pady=4)
-        
-        ttk.Label(plan_input_frame, text="Status").grid(row=3, column=0, sticky="w")
-        ttk.Combobox(plan_input_frame, textvariable=self.var_status,
-            values=("Planned", "Ongoing", "Completed"), state="readonly") \
-            .grid(row=3, column=1, sticky="ew", padx=4, pady=4)
-        
-        ttk.Label(plan_input_frame, text="Notes").grid(row=3, column=2, sticky="w")
-        ttk.Entry(plan_input_frame, textvariable=self.var_notes).grid(row=3, column=3, sticky="ew", padx=4, pady=4)
+        ttk.Label(plan_input_frame, text="Status", font=("Segoe UI", 9, "bold")).grid(row=3, column=0, sticky="w", pady=5)
+        status_combo = ttk.Combobox(plan_input_frame, textvariable=self.var_status,
+            values=("Planned", "Ongoing", "Completed"), state="readonly", font=("Segoe UI", 10))
+        status_combo.grid(row=3, column=1, sticky="ew", padx=(5,15), pady=5)
+
+        ttk.Label(plan_input_frame, text="Notes:",font=("Segoe UI", 9, "bold")).grid(row=3, column=2, sticky="w", pady=5)
+        notes_entry = ttk.Entry(plan_input_frame, textvariable=self.var_notes, font=("Segoe UI", 10))
+        notes_entry.grid(row=3, column=3, sticky="ew", padx=(5,0), pady=5)
 
         # Treatment plan buttons
         plan_btn_frame = ttk.Frame(treatment_frame)
-        plan_btn_frame.grid(row=1, column=0, columnspan=4, sticky="ew", padx=(0, 10))
-        ttk.Button(plan_btn_frame, text="Add Item", command=self.on_add_plan).pack(side="left", padx=2)
-        ttk.Button(plan_btn_frame, text="Edit Selected", command=self.on_edit_plan).pack(side="left", padx=2)
-        ttk.Button(plan_btn_frame, text="Save Changes", command=self.on_save_plan_changes).pack(side="left", padx=2)
-        ttk.Button(plan_btn_frame, text="Delete Selected", command=self.on_delete_plan).pack(side="left", padx=2)
-        ttk.Button(plan_btn_frame, text="Clear Form", command=self.clear_plan_inputs).pack(side="left", padx=2)
+        plan_btn_frame.grid(row=1, column=0, sticky="ew", padx=(0, 15))
+        add_btn = ttk.Button(plan_btn_frame, text="Add Item", command=self.on_add_plan)
+        add_btn.pack(side="left", padx=(0,10))
+        edit_btn = ttk.Button(plan_btn_frame, text="Edit Selected", command=self.on_edit_plan)
+        edit_btn.pack(side="left", padx=(0,10))
+        save_btn = ttk.Button(plan_btn_frame, text="Save Changes", command=self.on_save_plan_changes)
+        save_btn.pack(side="left", padx=(0,10))
+        delete_btn = ttk.Button(plan_btn_frame, text="Delete Selected", command=self.on_delete_plan)
+        delete_btn.pack(side="left", padx=(0,10))
+        clear_btn = ttk.Button(plan_btn_frame, text="Clear Form", command=self.clear_plan_inputs)
+        clear_btn.pack(side="left", padx=(0,10))
         
         # Treatment plan tree
-        tree_frame = ttk.Frame(treatment_frame)
-        tree_frame.grid(row=2, column=0, columnspan=4, sticky="nsew", pady=0)
-        tree_frame.columnconfigure(0, weight=1)
-        tree_frame.rowconfigure(0, weight=1)
+        list_frame = ttk.Frame(treatment_frame)
+        list_frame.grid(row=2, column=0, sticky="nsew", pady=(0,0))
+        list_frame.columnconfigure(0, weight=1)
+        list_frame.rowconfigure(0, weight=1)
         
         cols = ("type", "name", "dosage", "frequency", "duration", "start", "end", "status", "notes")
-        self.plan_tree = ttk.Treeview(tree_frame, columns=cols, show="headings", height=8)
-        for c, w in zip(cols, (100, 160, 100, 100, 80, 100, 100, 100, 180)):
-            self.plan_tree.heading(c, text=c.title())
-            self.plan_tree.column(c, width=100, anchor="center")
+        self.plan_tree = ttk.Treeview(list_frame, columns=cols, show="headings", height=8)
+        # Configure headers and columns
+        headers = {
+            "type": "Type", "name": "Name", "dosage": "Dosage", "frequency": "Frequncy", "duration": "Days",
+            "start": "Start Date", "end": "End Date", "status": "Status", "notes": "Notes"
+            }
+        widths = (80, 150, 100, 100, 60, 90, 90, 80, 200)
+        for col, width in zip(cols, widths):
+            self.plan_tree.heading(col, text = headers[col], anchor="w")
+            self.plan_tree.column(col, width=width, anchor="center" if col in ["start","end","duration"] else "w")
         self.plan_tree.grid(row=0, column=0, sticky="nsew")
         
-        plan_scroll = ttk.Scrollbar(tree_frame, orient="vertical", command=self.plan_tree.yview)
-        plan_scroll.grid(row=0, column=1, sticky="ns")
-        self.plan_tree.configure(yscrollcommand=plan_scroll.set)
+        plan_v_scroll = ttk.Scrollbar(list_frame, orient="vertical", command=self.plan_tree.yview)
+        plan_v_scroll.grid(row=0, column=1, sticky="ns")
+        self.plan_tree.configure(yscrollcommand=plan_v_scroll.set)
+
+        plan_h_scroll = ttk.Scrollbar(list_frame, orient="horizontal", command=self.plan_tree.xview)
+        plan_h_scroll.grid(row=1, column=0, sticky="ew")
+        self.plan_tree.configure(yscrollcommand=plan_h_scroll.set)
         
         treatment_frame.rowconfigure(2, weight=1)
         
         # Configure main content frame row weights
         content_frame.rowconfigure(1, weight=1)  # Medical & Dental history
-        content_frame.rowconfigure(2, weight=1)  # Clinical examination
-        content_frame.rowconfigure(5, weight=1)  # Treatment plan
+        content_frame.rowconfigure(4, weight=1)  # Clinical examination
+        content_frame.rowconfigure(6, weight=1)  # Treatment plan
         
         # Enable mouse wheel scrolling
         def on_mousewheel(event):            
             main_canvas.yview_scroll(int(-1*(event.delta/120)), "units")
         main_canvas.bind_all("<MouseWheel>", on_mousewheel)
+
+    def on_consent_changed(self):
+        """Auto-set consent date when checkbox is checked"""
+        if self.var_consent_obtained.get() and not self.var_consent_date.get():
+            self.var_consent_date.set(iso_today())
 
     # --------- Browse/Search Tab ---------
 
@@ -807,6 +1014,7 @@ class ClinicApp(tk.Tk):
 
     def on_add_plan(self):
         try:
+            # messagebox.showinfo("Plane name :",self.var_name.get())
             name = safe_str(self.var_name.get())
             if not name:
                 raise ValueError("Plan Name is required.")
