@@ -58,7 +58,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS cases (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             patient_id INTEGER NOT NULL,
-            op_number INTEGER,  -- Outpatient number (unique per day)
+            op_number INTEGER UNIQUE,  -- Outpatient number (globally unique)
             case_date TEXT NOT NULL DEFAULT (date('now')),  -- YYYY-MM-DD
             follow_up_date TEXT,  -- YYYY-MM-DD
             case_status TEXT DEFAULT 'Open',  -- Open, In Progress, Closed, Cancelled
@@ -100,8 +100,6 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_cases_patient_date ON cases(patient_id, case_date);
         CREATE INDEX IF NOT EXISTS idx_cases_followup ON cases(follow_up_date);
         CREATE INDEX IF NOT EXISTS idx_cases_status ON cases(case_status);
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_cases_op_number_date ON cases(op_number, case_date);
-        CREATE INDEX IF NOT EXISTS idx_cases_op_number ON cases(op_number);
         """
     )
 
@@ -165,139 +163,6 @@ def migrate_remove_unique_phone():
     finally:
         conn.close()
 
-
-def migrate_op_number_per_day():
-    """Migration to change op_number from globally UNIQUE to unique per date, with renumbering"""
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    
-    try:
-        # Check if migration has already been applied by looking at table schema
-        cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='cases'")
-        schema = cursor.fetchone()
-        
-        # If schema doesn't contain UNIQUE constraint on op_number, migration already applied
-        if not schema or "op_number INTEGER" not in schema[0] or "UNIQUE" not in schema[0]:
-            # Migration already applied or new database
-            return True
-        
-        print("Running migration: Changing op_number to unique per date and renumbering sequentially...")
-        
-        # Create new table without UNIQUE constraint on op_number, matching the init_db schema
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS cases_new (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                patient_id INTEGER NOT NULL,
-                op_number INTEGER,
-                case_date TEXT NOT NULL DEFAULT (date('now')),
-                follow_up_date TEXT,
-                case_status TEXT DEFAULT 'Open',
-                chief_complaint TEXT NOT NULL,
-                medical_history TEXT,
-                dental_history TEXT,
-                examination TEXT,
-                diagnosis TEXT,
-                consent_obtained BOOLEAN DEFAULT 0,
-                consent_date TEXT,
-                consent_file_path TEXT,
-                vitals_bp TEXT,
-                vitals_hr TEXT,
-                vitals_temp TEXT,
-                vitals_weight TEXT,
-                closed_date TEXT,
-                created_at TEXT NOT NULL DEFAULT (datetime('now')),
-                FOREIGN KEY(patient_id) REFERENCES patients(id) ON DELETE CASCADE
-            )
-        """)
-        
-        # Copy data from old table to new table with renumbered op_numbers
-        # Renumber sequentially within each date, ordered by original id
-        try:
-            cursor.execute("""
-                INSERT INTO cases_new (id, patient_id, op_number, case_date, follow_up_date, case_status, 
-                                       chief_complaint, medical_history, dental_history, examination, diagnosis, 
-                                       consent_obtained, consent_date, consent_file_path, vitals_bp, vitals_hr, 
-                                       vitals_temp, vitals_weight, closed_date, created_at)
-                SELECT 
-                    c1.id,
-                    c1.patient_id,
-                    (SELECT COUNT(*) FROM cases c2 WHERE c2.case_date = c1.case_date AND c2.id <= c1.id) as new_op_number,
-                    c1.case_date,
-                    c1.follow_up_date,
-                    c1.case_status,
-                    c1.chief_complaint,
-                    COALESCE(c1.medical_history, ''),
-                    COALESCE(c1.dental_history, ''),
-                    COALESCE(c1.examination, COALESCE(c1.clinical_exam, '')),
-                    c1.diagnosis,
-                    COALESCE(c1.consent_obtained, 0),
-                    COALESCE(c1.consent_date, ''),
-                    COALESCE(c1.consent_file_path, COALESCE(c1.consent_file, '')),
-                    COALESCE(c1.vitals_bp, COALESCE(c1.bp, '')),
-                    COALESCE(c1.vitals_hr, COALESCE(c1.hr, '')),
-                    COALESCE(c1.vitals_temp, COALESCE(c1.temp, '')),
-                    COALESCE(c1.vitals_weight, ''),
-                    COALESCE(c1.closed_date, ''),
-                    COALESCE(c1.created_at, datetime('now'))
-                FROM cases c1
-                ORDER BY c1.case_date, c1.id
-            """)
-        except Exception as inner_e:
-            # If that fails, try simpler version without column mapping
-            cursor.execute("""
-                INSERT INTO cases_new (id, patient_id, op_number, case_date, follow_up_date, case_status, 
-                                       chief_complaint, medical_history, dental_history, examination, diagnosis, 
-                                       consent_obtained, consent_date, consent_file_path, vitals_bp, vitals_hr, 
-                                       vitals_temp, vitals_weight, closed_date, created_at)
-                SELECT 
-                    c1.id,
-                    c1.patient_id,
-                    (SELECT COUNT(*) FROM cases c2 WHERE c2.case_date = c1.case_date AND c2.id <= c1.id) as new_op_number,
-                    c1.case_date,
-                    COALESCE(c1.follow_up_date, ''),
-                    COALESCE(c1.case_status, 'Open'),
-                    c1.chief_complaint,
-                    COALESCE(c1.medical_history, ''),
-                    COALESCE(c1.dental_history, ''),
-                    COALESCE(c1.examination, ''),
-                    COALESCE(c1.diagnosis, ''),
-                    COALESCE(c1.consent_obtained, 0),
-                    COALESCE(c1.consent_date, ''),
-                    COALESCE(c1.consent_file_path, ''),
-                    COALESCE(c1.vitals_bp, ''),
-                    COALESCE(c1.vitals_hr, ''),
-                    COALESCE(c1.vitals_temp, ''),
-                    COALESCE(c1.vitals_weight, ''),
-                    COALESCE(c1.closed_date, ''),
-                    COALESCE(c1.created_at, datetime('now'))
-                FROM cases c1
-                ORDER BY c1.case_date, c1.id
-            """)
-        
-        # Drop old table
-        cursor.execute("DROP TABLE IF EXISTS cases")
-        
-        # Rename new table to cases
-        cursor.execute("ALTER TABLE cases_new RENAME TO cases")
-        
-        # Recreate indexes with new constraints
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_cases_patient_date ON cases(patient_id, case_date)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_cases_followup ON cases(follow_up_date)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_cases_status ON cases(case_status)")
-        cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_cases_op_number_date ON cases(op_number, case_date)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_cases_op_number ON cases(op_number)")
-        
-        conn.commit()
-        print("✓ Migration completed: op_number is now unique per date with sequential numbering")
-        return True
-    except Exception as e:
-        print(f"✗ Migration error: {e}")
-        conn.rollback()
-        return False
-    finally:
-        conn.close()
-
-
 # ---------------------- Main App ----------------------
 
 class ClinicApp(tk.Tk):
@@ -310,7 +175,6 @@ class ClinicApp(tk.Tk):
         # Initialize database and run migrations
         init_db()
         migrate_remove_unique_phone()
-        migrate_op_number_per_day()
         
         # State
         self.current_patient_id = None
