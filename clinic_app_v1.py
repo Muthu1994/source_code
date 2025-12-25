@@ -14,7 +14,7 @@ import os
 from reportlab.lib.pagesizes import letter, A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, KeepTogether
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
 
@@ -269,8 +269,7 @@ def export_case_to_pdf(case_id, patient_id, output_path):
         
         # Title
         story.append(Spacer(1, 0.15*inch))
-        story.append(Paragraph("CASE SHEET", title_style))
-        
+        story.append(Paragraph("CASE SHEET", title_style))        
         
         # Patient Information
         story.append(Paragraph("PATIENT INFORMATION", heading_style))
@@ -346,8 +345,8 @@ def export_case_to_pdf(case_id, patient_id, output_path):
         story.append(history_table)
         story.append(Spacer(1, 0.2*inch))
         
-        # Clinical Examination
-        story.append(Paragraph("CLINICAL EXAMINATION & DIAGNOSIS", heading_style))
+        # Clinical Examination        
+        clinical_exam_heading = Paragraph("CLINICAL EXAMINATION & DIAGNOSIS", heading_style)
         exam_data = [
             ['Examination:', exam or 'Not specified'],
             ['Diagnosis:', diagnosis or 'Not specified']
@@ -364,17 +363,18 @@ def export_case_to_pdf(case_id, patient_id, output_path):
             ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
             ('GRID', (0, 0), (-1, -1), 1, colors.grey)
         ]))
-        story.append(exam_table)
+        clinical_section = KeepTogether([clinical_exam_heading, exam_table])
+        story.append(clinical_section)        
         story.append(Spacer(1, 0.2*inch))
         
-        # Vital Signs
-        if bp or hr or temp or weight:
-            story.append(Paragraph("VITAL SIGNS", heading_style))
+        # Investigations
+        if bp or hr or temp or weight:            
+            investigations_heading = Paragraph("INVESTIGATIONS", heading_style)
             vitals_data = [
                 ['BP (mmHg):', bp or ''],
                 ['HR (bpm):', hr or ''],
                 ['Temperature (°C):', temp or ''],
-                ['Weight (kg):', weight or '']
+                ['Scan Type:', weight or '']
             ]
             
             vitals_table = Table(vitals_data, colWidths=[2*inch, 4.5*inch])
@@ -387,13 +387,13 @@ def export_case_to_pdf(case_id, patient_id, output_path):
                 ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
                 ('GRID', (0, 0), (-1, -1), 1, colors.grey)
             ]))
-            story.append(vitals_table)
+            investigations_section = KeepTogether([investigations_heading, vitals_table])
+            story.append(investigations_section)            
             story.append(Spacer(1, 0.2*inch))
         
         # Treatment Plan
-        if plans:
-            story.append(PageBreak())
-            story.append(Paragraph("TREATMENT PLAN", heading_style))
+        if plans:            
+            plan_heading = Paragraph("TREATMENT PLAN", heading_style)            
             
             plan_data = [['Type', 'Name', 'Dosage', 'Frequency', 'Duration', 'Start Date', 'End Date', 'Status']]
             for plan in plans:
@@ -420,12 +420,13 @@ def export_case_to_pdf(case_id, patient_id, output_path):
                 ('GRID', (0, 0), (-1, -1), 1, colors.grey),
                 ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f0f0f0')])
             ]))
-            story.append(plan_table)
+            plan_section = KeepTogether([plan_heading, plan_table])
+            story.append(plan_section)            
         
         # Consent Information
         if consent_obtained:
-            story.append(Spacer(1, 0.2*inch))
-            story.append(Paragraph("PATIENT CONSENT", heading_style))
+            story.append(Spacer(1, 0.2*inch))            
+            consent_heading = Paragraph("PATIENT CONSENT", heading_style)
             consent_data = [
                 ['Consent Obtained:', 'Yes'],
                 ['Consent Date:', consent_date or '']
@@ -441,7 +442,8 @@ def export_case_to_pdf(case_id, patient_id, output_path):
                 ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
                 ('GRID', (0, 0), (-1, -1), 1, colors.grey)
             ]))
-            story.append(consent_table)
+            consent_section = KeepTogether([consent_heading, consent_table])
+            story.append(consent_section)            
         
         # Footer with timestamp
         story.append(Spacer(1, 0.3*inch))
@@ -505,7 +507,7 @@ class ClinicApp(tk.Tk):
         
         helpm = tk.Menu(menubar, tearoff=0)
         helpm.add_command(label="About", command=lambda: messagebox.showinfo(
-            "About", "Clinic App\ntkinter + sqlite3\nManage patients, cases, treatment plans and history."))
+            "About", "Clinic App\nManage patients, cases, treatment plans and history."))
         menubar.add_cascade(label="Help", menu=helpm)
         self.config(menu=menubar)
 
@@ -1189,8 +1191,8 @@ class ClinicApp(tk.Tk):
         
         row += 1
         
-        # === VITALS SECTION ===
-        vitals_frame = ttk.LabelFrame(content_frame, text="Vital Signs", padding=15)
+        # === INVESTIGATION SECTION ===
+        vitals_frame = ttk.LabelFrame(content_frame, text="Investigations", padding=15)
         vitals_frame.grid(row=row, column=0, columnspan=2, sticky="ew", padx=5, pady=(0,10))
         for i in range(8):
             vitals_frame.columnconfigure(i, weight=1)
@@ -1215,10 +1217,10 @@ class ClinicApp(tk.Tk):
         temp_entry.grid(row=1, column=1, sticky="w", padx=(5, 10), pady=5)
         ttk.Label(vitals_frame, text="(mg/dl)", font=("Segoe UI", 8),foreground="gray").grid(row=1, column=2, sticky="w")
 
-        ttk.Label(vitals_frame, text="Weight:", font=("Segoe UI", 9, "bold")).grid(row=1, column=3, sticky="w", pady=5)
+        ttk.Label(vitals_frame, text="Scan Type:", font=("Segoe UI", 9, "bold")).grid(row=1, column=3, sticky="w", pady=5)
         weight_entry = ttk.Entry(vitals_frame, textvariable=self.var_weight, width=8, font=("Segoe UI", 10))
-        weight_entry.grid(row=1, column=4, sticky="w", padx=(5,10), pady=5)
-        ttk.Label(vitals_frame, text="kg", font=("Segoe UI", 8),foreground="gray").grid(row=1, column=5, sticky="w")
+        weight_entry.grid(row=1, column=4, sticky="ew", padx=(5,10), pady=5)
+        ttk.Label(vitals_frame, text="X-Ray/MRI/CT Scan", font=("Segoe UI", 8),foreground="gray").grid(row=1, column=5, sticky="w")
                 
         row += 1
         
@@ -1611,9 +1613,12 @@ class ClinicApp(tk.Tk):
         conn = sqlite3.connect(DB_FILE)
         try:
             # Find the maximum op_number for the given date
+            # result = conn.execute(
+            #     "SELECT MAX(op_number) FROM cases WHERE case_date = ?",
+            #     (date_str,)
+            # ).fetchone()
             result = conn.execute(
-                "SELECT MAX(op_number) FROM cases WHERE case_date = ?",
-                (date_str,)
+                "SELECT MAX(op_number) FROM cases",
             ).fetchone()
             
             max_op_num = result[0] if result and result[0] else 0
@@ -1623,6 +1628,10 @@ class ClinicApp(tk.Tk):
             conn.close()
 
     def on_new_case(self):
+        sel = self.p_tree.selection()
+        if not sel:
+            messagebox.showwarning("No Patient", "Select a patient first.")
+            return
         self.current_case_id = None
         self.var_case_date.set(iso_today())
         self.var_followup_date.set("")
