@@ -8,8 +8,15 @@ Requires: Python 3.9 (tkinter, sqlite3 included in standard library)
 
 import sqlite3
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, filedialog
 from datetime import datetime, timedelta
+import os
+from reportlab.lib.pagesizes import letter, A4
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
 
 DB_FILE = "clinic.db"
 PAGE_SIZE = 50
@@ -163,6 +170,294 @@ def migrate_remove_unique_phone():
     finally:
         conn.close()
 
+# ---------------------- PDF Export ----------------------
+def my_header(canvas, doc):
+    canvas.saveState()
+    #Page Dimensions
+    page_width, page_height = A4
+    header_height = 1.0 * inch
+    # Path to your image, x-coordinate, y-coordinate, width, height
+    logo_path = "clinic_logo.png"
+    canvas.drawImage(logo_path, 0, page_height - header_height, width=page_width, height=header_height, preserveAspectRatio=False)
+    canvas.restoreState()
+
+def export_case_to_pdf(case_id, patient_id, output_path):
+    """
+    Export case details and treatment plan to PDF
+    
+    Args:
+        case_id: ID of the case to export
+        patient_id: ID of the patient
+        output_path: Full path where PDF should be saved
+    
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        # Fetch patient data
+        conn = sqlite3.connect(DB_FILE)
+        patient = conn.execute(
+            "SELECT first_name, last_name, gender, dob, phone, email, address FROM patients WHERE id = ?",
+            (patient_id,)
+        ).fetchone()
+        
+        # Fetch case data
+        case = conn.execute(
+            """SELECT id, op_number, case_date, follow_up_date, case_status, chief_complaint, 
+                      medical_history, dental_history, examination, diagnosis,
+                      consent_obtained, consent_date, vitals_bp, vitals_hr, vitals_temp, vitals_weight,
+                      closed_date
+               FROM cases WHERE id = ?""",
+            (case_id,)
+        ).fetchone()
+        
+        # Fetch treatment plans
+        plans = conn.execute(
+            """SELECT item_type, name, dosage, frequency, duration_days, start_date, end_date, status, notes
+               FROM treatment_plans WHERE case_id = ? ORDER BY id""",
+            (case_id,)
+        ).fetchall()
+        
+        conn.close()
+        
+        if not patient or not case:
+            return False
+        
+        # Create PDF
+        doc = SimpleDocTemplate(output_path, pagesize=A4,
+                                rightMargin=0.75*inch, leftMargin=0.75*inch,
+                                topMargin=1*inch, bottomMargin=0.75*inch)
+        
+        # Styles
+        styles = getSampleStyleSheet()
+        title_style = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Heading1'],
+            fontSize=16,
+            textColor=colors.HexColor('#1f4788'),
+            spaceAfter=6,
+            alignment=TA_CENTER
+        )
+        
+        heading_style = ParagraphStyle(
+            'CustomHeading',
+            parent=styles['Heading2'],
+            fontSize=12,
+            textColor=colors.HexColor('#1f4788'),
+            spaceAfter=6,
+            spaceBefore=12,
+            borderBottom=1,
+            borderColor=colors.HexColor('#1f4788')
+        )
+        
+        normal_style = ParagraphStyle(
+            'CustomNormal',
+            parent=styles['Normal'],
+            fontSize=10,
+            leading=14
+        )
+
+        styleN = styles["BodyText"]
+        
+        # Extract data
+        first_name, last_name, gender, dob, phone, email, address = patient
+        op_num, case_date, follow_up, status, chief_complaint, med_hist, dental_hist, exam, diagnosis, \
+        consent_obtained, consent_date, bp, hr, temp, weight, closed_date = case[1:]
+        
+        # Build content
+        story = []
+        
+        # Title
+        story.append(Spacer(1, 0.15*inch))
+        story.append(Paragraph("CASE SHEET", title_style))
+        
+        
+        # Patient Information
+        story.append(Paragraph("PATIENT INFORMATION", heading_style))
+        patient_data = [
+            ['First Name:', first_name or ''],
+            ['Last Name:', last_name or ''],
+            ['Gender:', gender or ''],
+            ['Date of Birth:', dob or ''],
+            ['Phone:', phone or ''],
+            ['Email:', email or ''],
+            ['Address:', address or '']
+        ]
+        
+        patient_table = Table(patient_data, colWidths=[2*inch, 4.5*inch])
+        patient_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#e8f0f8')),
+            ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+            ('GRID', (0, 0), (-1, -1), 1, colors.grey)
+        ]))
+        story.append(patient_table)
+        story.append(Spacer(1, 0.15*inch))
+        
+        # Case Information
+        story.append(Paragraph("CASE INFORMATION", heading_style))
+        case_data = [
+            ['OP Number:', str(op_num) if op_num else ''],
+            ['Case Date:', case_date or ''],
+            ['Follow-up Date:', follow_up or 'N/A'],
+            ['Status:', status or ''],
+            ['Closed Date:', closed_date or 'N/A']
+        ]
+        
+        case_table = Table(case_data, colWidths=[2*inch, 4.5*inch])
+        case_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#e8f0f8')),
+            ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+            ('GRID', (0, 0), (-1, -1), 1, colors.grey)
+        ]))
+        story.append(case_table)
+        story.append(Spacer(1, 0.2*inch))
+        
+        # Chief Complaint
+        story.append(Paragraph("CHIEF COMPLAINT", heading_style))
+        story.append(Paragraph(chief_complaint or 'Not specified', normal_style))
+        story.append(Spacer(1, 0.15*inch))
+        
+        # Medical & Dental History
+        story.append(Paragraph("MEDICAL & DENTAL HISTORY", heading_style))
+        history_data = [
+            ['Past Medical History:', med_hist or 'Not specified'],
+            ['Past Dental History:', dental_hist or 'Not specified']
+        ]
+        
+        history_table = Table(history_data, colWidths=[2*inch, 4.5*inch])
+        history_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#e8f0f8')),
+            ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+            ('GRID', (0, 0), (-1, -1), 1, colors.grey)
+        ]))
+        story.append(history_table)
+        story.append(Spacer(1, 0.2*inch))
+        
+        # Clinical Examination
+        story.append(Paragraph("CLINICAL EXAMINATION & DIAGNOSIS", heading_style))
+        exam_data = [
+            ['Examination:', exam or 'Not specified'],
+            ['Diagnosis:', diagnosis or 'Not specified']
+        ]
+        
+        exam_table = Table(exam_data, colWidths=[2*inch, 4.5*inch])
+        exam_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#e8f0f8')),
+            ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+            ('GRID', (0, 0), (-1, -1), 1, colors.grey)
+        ]))
+        story.append(exam_table)
+        story.append(Spacer(1, 0.2*inch))
+        
+        # Vital Signs
+        if bp or hr or temp or weight:
+            story.append(Paragraph("VITAL SIGNS", heading_style))
+            vitals_data = [
+                ['BP (mmHg):', bp or ''],
+                ['HR (bpm):', hr or ''],
+                ['Temperature (°C):', temp or ''],
+                ['Weight (kg):', weight or '']
+            ]
+            
+            vitals_table = Table(vitals_data, colWidths=[2*inch, 4.5*inch])
+            vitals_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#e8f0f8')),
+                ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, -1), 10),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+                ('GRID', (0, 0), (-1, -1), 1, colors.grey)
+            ]))
+            story.append(vitals_table)
+            story.append(Spacer(1, 0.2*inch))
+        
+        # Treatment Plan
+        if plans:
+            story.append(PageBreak())
+            story.append(Paragraph("TREATMENT PLAN", heading_style))
+            
+            plan_data = [['Type', 'Name', 'Dosage', 'Frequency', 'Duration', 'Start Date', 'End Date', 'Status']]
+            for plan in plans:
+                plan_data.append([
+                    plan[0] or '',  # type
+                    Paragraph(plan[1] or '', styleN),  # name
+                    plan[2] or '',  # dosage
+                    plan[3] or '',  # frequency
+                    str(plan[4]) if plan[4] else '',  # duration
+                    plan[5] or '',  # start_date
+                    plan[6] or '',  # end_date
+                    plan[7] or ''   # status
+                ])
+            
+            plan_table = Table(plan_data, colWidths=[0.6*inch, 1.2*inch, 0.8*inch, 0.8*inch, 0.6*inch, 0.9*inch, 0.9*inch, 0.7*inch])
+            plan_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1f4788')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 9),
+                ('FONTSIZE', (0, 1), (-1, -1), 8),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+                ('GRID', (0, 0), (-1, -1), 1, colors.grey),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f0f0f0')])
+            ]))
+            story.append(plan_table)
+        
+        # Consent Information
+        if consent_obtained:
+            story.append(Spacer(1, 0.2*inch))
+            story.append(Paragraph("PATIENT CONSENT", heading_style))
+            consent_data = [
+                ['Consent Obtained:', 'Yes'],
+                ['Consent Date:', consent_date or '']
+            ]
+            
+            consent_table = Table(consent_data, colWidths=[2*inch, 4.5*inch])
+            consent_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#e8f0f8')),
+                ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, -1), 10),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+                ('GRID', (0, 0), (-1, -1), 1, colors.grey)
+            ]))
+            story.append(consent_table)
+        
+        # Footer with timestamp
+        story.append(Spacer(1, 0.3*inch))
+        footer_text = f"<b>Generated on:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        story.append(Paragraph(footer_text, normal_style))
+        
+        # Build PDF
+        doc.build(story, onFirstPage=my_header, onLaterPages=my_header)
+        return True
+        
+    except Exception as e:
+        print(f"PDF Export Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
 # ---------------------- Main App ----------------------
 
 class ClinicApp(tk.Tk):
@@ -244,6 +539,7 @@ class ClinicApp(tk.Tk):
                 
         # Right side buttons
         ttk.Button(bottom, text="Close Case", command=self.on_close_case).pack(side="right",padx=(0, 6))
+        ttk.Button(bottom, text="Export to PDF", command=self.on_export_case_to_pdf).pack(side="right",padx=(0, 6))
         ttk.Button(bottom, text="Save Case + Plan", command=self.on_save_case).pack(side="right")
         ttk.Button(bottom, text="New Case", command=self.on_new_case).pack(side="right", padx=(0, 6))
 
@@ -1178,6 +1474,7 @@ class ClinicApp(tk.Tk):
         act.grid(row=row+2, column=0, columnspan=8, sticky="e")
         ttk.Button(act, text="Load Selected Case", command=self.on_load_selected_case).grid(row=0, column=0, padx=4)
         ttk.Button(act, text="Open Selected Patient", command=self.on_open_selected_patient_from_search).grid(row=0, column=1, padx=4)
+        ttk.Button(act, text="Export to PDF", command=self.on_export_case_from_search).grid(row=0, column=2, padx=4)
         
         f.rowconfigure(row+1, weight=1)
 
@@ -1779,6 +2076,110 @@ class ClinicApp(tk.Tk):
         
         except sqlite3.Error as e:
             messagebox.showerror("Database Error", f"Could not close case.\n{e}")
+
+    def on_export_case_to_pdf(self):
+        """Export current case to PDF"""
+        if not self.current_case_id or not self.current_patient_id:
+            messagebox.showwarning("No Case", "Please load a case first to export.")
+            return
+        
+        try:
+            # Get patient name for filename
+            conn = sqlite3.connect(DB_FILE)
+            patient = conn.execute(
+                "SELECT first_name, last_name FROM patients WHERE id = ?",
+                (self.current_patient_id,)
+            ).fetchone()
+            case = conn.execute(
+                "SELECT op_number, case_date FROM cases WHERE id = ?",
+                (self.current_case_id,)
+            ).fetchone()
+            conn.close()
+            
+            if not patient or not case:
+                messagebox.showerror("Error", "Could not load patient/case data.")
+                return
+            
+            first_name, last_name = patient
+            op_number, case_date = case
+            
+            # Default filename
+            default_filename = f"Case_{op_number}_{first_name}_{last_name}_{case_date}.pdf"
+            
+            # File dialog to save PDF
+            file_path = filedialog.asksaveasfilename(
+                defaultextension=".pdf",
+                initialfile=default_filename,
+                filetypes=[("PDF files", "*.pdf"), ("All files", "*.*")],
+                title="Export Case to PDF"
+            )
+            
+            if not file_path:
+                return  # User cancelled
+            
+            # Export to PDF
+            if export_case_to_pdf(self.current_case_id, self.current_patient_id, file_path):
+                messagebox.showinfo("Success", f"Case exported successfully to:\n{file_path}")
+            else:
+                messagebox.showerror("Error", "Failed to export case to PDF. Check the error logs.")
+                
+        except Exception as e:
+            messagebox.showerror("Error", f"Error exporting case:\n{str(e)}")
+
+    def on_export_case_from_search(self):
+        """Export selected case from search results to PDF"""
+        sel = self.search_tree.selection()
+        if not sel:
+            messagebox.showwarning("No Selection", "Please select a case to export.")
+            return
+        
+        case_id = int(self.search_tree.item(sel[0], "values")[0])
+        
+        try:
+            conn = sqlite3.connect(DB_FILE)
+            case = conn.execute(
+                "SELECT patient_id, op_number, case_date FROM cases WHERE id = ?",
+                (case_id,)
+            ).fetchone()
+            
+            if not case:
+                messagebox.showerror("Error", "Case not found.")
+                conn.close()
+                return
+            
+            patient_id, op_number, case_date = case
+            patient = conn.execute(
+                "SELECT first_name, last_name FROM patients WHERE id = ?",
+                (patient_id,)
+            ).fetchone()
+            conn.close()
+            
+            if not patient:
+                messagebox.showerror("Error", "Patient not found.")
+                return
+            
+            first_name, last_name = patient
+            default_filename = f"Case_{op_number}_{first_name}_{last_name}_{case_date}.pdf"
+            
+            # File dialog to save PDF
+            file_path = filedialog.asksaveasfilename(
+                defaultextension=".pdf",
+                initialfile=default_filename,
+                filetypes=[("PDF files", "*.pdf"), ("All files", "*.*")],
+                title="Export Case to PDF"
+            )
+            
+            if not file_path:
+                return
+            
+            # Export to PDF
+            if export_case_to_pdf(case_id, patient_id, file_path):
+                messagebox.showinfo("Success", f"Case exported successfully to:\n{file_path}")
+            else:
+                messagebox.showerror("Error", "Failed to export case to PDF. Check the error logs.")
+                
+        except Exception as e:
+            messagebox.showerror("Error", f"Error exporting case:\n{str(e)}")
 
 # ---------------------- Run ----------------------
 
