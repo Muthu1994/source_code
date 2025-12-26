@@ -373,7 +373,7 @@ def export_case_to_pdf(case_id, patient_id, output_path):
             vitals_data = [
                 ['BP (mmHg):', bp or ''],
                 ['HR (bpm):', hr or ''],
-                ['Temperature (°C):', temp or ''],
+                ['RBS Level (mg/dl):', temp or ''],
                 ['Scan Type:', weight or '']
             ]
             
