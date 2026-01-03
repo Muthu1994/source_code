@@ -18,6 +18,7 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
 
+
 DB_FILE = "clinic.db"
 PAGE_SIZE = 50
 
@@ -301,7 +302,7 @@ def export_case_to_pdf(case_id, patient_id, output_path):
         case_data = [
             ['OP Number:', str(op_num) if op_num else ''],
             ['Case Date:', case_date or ''],
-            ['Follow-up Date:', follow_up or 'N/A'],
+            ['Revisit Date:', follow_up or 'N/A'],
             ['Status:', status or ''],
             ['Closed Date:', closed_date or 'N/A']
         ]
@@ -327,8 +328,8 @@ def export_case_to_pdf(case_id, patient_id, output_path):
         # Medical & Dental History
         story.append(Paragraph("MEDICAL & DENTAL HISTORY", heading_style))
         history_data = [
-            ['Past Medical History:', med_hist or 'Not specified'],
-            ['Past Dental History:', dental_hist or 'Not specified']
+            ['Past Medical History:', Paragraph(med_hist or 'Not specified', styleN)],
+            ['Past Dental History:', Paragraph(dental_hist or 'Not specified', styleN)]
         ]
         
         history_table = Table(history_data, colWidths=[2*inch, 4.5*inch])
@@ -348,8 +349,8 @@ def export_case_to_pdf(case_id, patient_id, output_path):
         # Clinical Examination        
         clinical_exam_heading = Paragraph("CLINICAL EXAMINATION & DIAGNOSIS", heading_style)
         exam_data = [
-            ['Examination:', exam or 'Not specified'],
-            ['Diagnosis:', diagnosis or 'Not specified']
+            ['Examination:', Paragraph(exam or 'Not specified', styleN)],
+            ['Diagnosis:', Paragraph(diagnosis or 'Not specified', styleN)]
         ]
         
         exam_table = Table(exam_data, colWidths=[2*inch, 4.5*inch])
@@ -705,10 +706,10 @@ class ClinicApp(tk.Tk):
         history_frame.rowconfigure(0, weight=1)
         
         # Case history tree (for selected patient)
-        c_cols = ("case_id", "date", "follow_up", "chief", "diagnosis", "status", "items")
+        c_cols = ("case_id", "date", "revisit", "chief", "diagnosis", "status", "items")
         self.c_tree = ttk.Treeview(history_frame, columns=c_cols, show="headings", height=15)
         c_headers = {
-            "case_id": "Case ID", "date": "Date", "follow_up": "Follow-up",
+            "case_id": "Case ID", "date": "Date", "revisit": "Revisit",
             "chief": "Chief Complaint", "diagnosis": "Diagnosis", "status": "Status", "items": "Plan Items"
         }
         c_widths = (0, 90, 90, 100, 180, 80, 80) #Hide case_id
@@ -907,10 +908,10 @@ class ClinicApp(tk.Tk):
             self.c_tree.delete(iid)
         
         # Update columns to include op_number
-        c_cols = ("case_id", "op_number", "date", "follow_up", "chief", "diagnosis", "status", "items")
+        c_cols = ("case_id", "op_number", "date", "revisit", "chief", "diagnosis", "status", "items")
         self.c_tree.configure(columns=c_cols)
         c_headers = {
-            "case_id": "Case ID", "op_number": "OP Number", "date": "Date", "follow_up": "Follow-up",
+            "case_id": "Case ID", "op_number": "OP Number", "date": "Date", "revisit": "Revisit",
             "chief": "Chief Complaint", "diagnosis": "Diagnosis", "status": "Status", "items": "Plan Items"
         }
         c_widths = (70, 90, 90, 100, 180, 180, 80, 80)
@@ -1064,7 +1065,7 @@ class ClinicApp(tk.Tk):
         ttk.Entry(case_info_frame, textvariable=self.var_case_date, font=("Segoe UI", 10)).grid(row=0, column=3, sticky="ew", padx=(5, 0), pady=5)
         
         # Second row: Follow-up Date and Case Status
-        ttk.Label(case_info_frame, text="Follow-up Date (YYYY-MM-DD)", font=("Segoe UI", 9, "bold")).grid(row=1, column=0, sticky="w", pady=5)
+        ttk.Label(case_info_frame, text="Revisit Date (YYYY-MM-DD)", font=("Segoe UI", 9, "bold")).grid(row=1, column=0, sticky="w", pady=5)
         ttk.Entry(case_info_frame, textvariable=self.var_followup_date, font=("Segoe UI", 10)).grid(row=1, column=1, sticky="ew", padx=(5, 15), pady=5)
         
         ttk.Label(case_info_frame, text="Case Status", font=("Segoe UI", 9, "bold")).grid(row=1, column=2, sticky="w", pady=5)
@@ -1454,11 +1455,11 @@ class ClinicApp(tk.Tk):
         ttk.Button(btns, text="Prev Page", command=self.on_prev_page).grid(row=0, column=2, padx=4)
         ttk.Button(btns, text="Next Page", command=self.on_next_page).grid(row=0, column=3, padx=4)
         
-        cols = ("case_id", "case_date", "follow_up", "first_name", "last_name",                
+        cols = ("case_id", "case_date", "revisit", "first_name", "last_name",                
         "phone", "chief", "diagnosis", "plan_items")
         self.search_tree = ttk.Treeview(f, columns=cols, show="headings", height=16)
         headers = {
-            "case_id": "Case ID", "case_date": "Date", "follow_up": "Follow-up",
+            "case_id": "Case ID", "case_date": "Date", "revisit": "Revisit",
             "first_name": "First", "last_name": "Last", "phone": "Phone",
             "chief": "Chief Complaint", "diagnosis": "Diagnosis", "plan_items": "Plan Items"
         }
