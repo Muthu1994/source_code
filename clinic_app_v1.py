@@ -714,8 +714,8 @@ class ClinicApp(tk.Tk):
         
         # Initialize database and run migrations
         init_db()
-        migrate_remove_unique_phone()
-        migrate_op_number_to_text()
+        # migrate_remove_unique_phone()
+        # migrate_op_number_to_text()
         
         # State
         self.current_patient_id = None
@@ -1338,7 +1338,7 @@ class ClinicApp(tk.Tk):
             pass
 
     def open_date_picker_calendar(self, entry_widget):
-        """Open a calendar popup for date selection"""
+        """Open a calendar popup for date selection with month/year dropdowns"""
         try:
             from tkcalendar import Calendar
             from datetime import datetime, date
@@ -1351,6 +1351,7 @@ class ClinicApp(tk.Tk):
             cal_window.wm_overrideredirect(False)
             cal_window.attributes('-topmost', True)
             cal_window.title("Select Date")
+            cal_window.resizable(False, False)
             
             # Position near the entry widget
             x = entry_widget.winfo_rootx()
@@ -1373,41 +1374,113 @@ class ClinicApp(tk.Tk):
                 except:
                     pass
             
-            # Create calendar with today's date as default
-            cal = Calendar(cal_window, selectmode='day', year=init_year, month=init_month, day=init_day)
-            cal.pack(padx=10, pady=10)
+            # Create a frame for month/year controls
+            ctrl_frame = ttk.Frame(cal_window)
+            ctrl_frame.pack(padx=10, pady=5, fill="x")
             
-            def on_date_select(event=None):
-                try:
-                    # Get the selected date from the calendar
-                    selected_date = cal.selection_get()
-                    if selected_date:
-                        # Format as YYYY-MM-DD
-                        date_str = selected_date.strftime('%Y-%m-%d')
-                        entry_widget.delete(0, 'end')
-                        entry_widget.insert(0, date_str)
-                        # Update age if this is the DOB field
-                        if hasattr(self, 'dob_entry') and entry_widget == self.dob_entry:
-                            self.update_age()
-                    cal_window.destroy()
-                except Exception as e:
-                    print(f"Date selection error: {e}")
-                    import traceback
-                    traceback.print_exc()
+            # Month dropdown
+            ttk.Label(ctrl_frame, text="Month:", font=("Segoe UI", 9)).pack(side="left", padx=(0, 5))
+            month_var = tk.IntVar(value=init_month)
+            month_combo = ttk.Combobox(ctrl_frame, textvariable=month_var, 
+                                       values=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+                                       state="readonly", width=5)
+            month_combo.pack(side="left", padx=5)
             
-            def on_escape(event=None):
+            # Year dropdown
+            ttk.Label(ctrl_frame, text="Year:", font=("Segoe UI", 9)).pack(side="left", padx=(15, 5))
+            year_var = tk.IntVar(value=init_year)
+            year_list = list(range(1900, 2101))  # 1900 to 2100
+            year_combo = ttk.Combobox(ctrl_frame, textvariable=year_var,
+                                      values=year_list, state="readonly", width=8)
+            year_combo.pack(side="left", padx=5)
+            
+            # Create a frame to hold the calendar
+            cal_frame = ttk.Frame(cal_window)
+            cal_frame.pack(padx=10, pady=5)
+            
+            # Store reference to calendar so we can destroy and recreate it
+            cal_ref = [None]  # Use list to allow modification in nested function
+            initialized = [False]  # Track if we're past initialization
+            window_closed = [False]  # Track if window is already closed
+            
+            def close_calendar():
+                """Close the calendar window safely"""
                 try:
-                    cal_window.destroy()
+                    if not window_closed[0]:
+                        window_closed[0] = True
+                        cal_window.destroy()
                 except:
                     pass
             
-            # Bind calendar selection to automatically populate date
-            cal.bind('<<CalendarSelected>>', on_date_select)
+            def on_date_select(event=None):
+                """Handle date selection from calendar"""
+                try:
+                    if cal_ref[0] is not None:
+                        selected_date = cal_ref[0].selection_get()
+                        if selected_date:
+                            # Format as YYYY-MM-DD
+                            date_str = selected_date.strftime('%Y-%m-%d')
+                            entry_widget.delete(0, 'end')
+                            entry_widget.insert(0, date_str)
+                            # Update age if this is the DOB field
+                            if hasattr(self, 'dob_entry') and entry_widget == self.dob_entry:
+                                self.update_age()
+                    close_calendar()
+                except Exception as e:
+                    print(f"Date selection error: {e}")
+            
+            def create_calendar():
+                """Create or recreate the calendar with current month/year"""
+                try:
+                    # Destroy old calendar if it exists
+                    if cal_ref[0] is not None:
+                        cal_ref[0].destroy()
+                    
+                    # Create new calendar with selected month/year
+                    new_year = year_var.get()
+                    new_month = month_var.get()
+                    cal_ref[0] = Calendar(cal_frame, selectmode='day', year=new_year, month=new_month)
+                    cal_ref[0].pack(padx=0, pady=0)
+                    
+                    # Bind the calendar selection event
+                    cal_ref[0].bind('<<CalendarSelected>>', on_date_select)
+                except Exception as e:
+                    print(f"Calendar creation error: {e}")
+            
+            # Create initial calendar
+            create_calendar()
+            initialized[0] = True
+            
+            def update_calendar(*args):
+                """Update calendar when month or year changes"""
+                if initialized[0]:  # Only update after initial creation
+                    create_calendar()
+            
+            # Bind month and year changes with safe callback
+            month_var.trace_add('write', update_calendar)
+            year_var.trace_add('write', update_calendar)
+            
+            def on_escape(event=None):
+                close_calendar()
+            
+            def on_focus_out(event=None):
+                """Close calendar when focus is lost"""
+                # Use after_idle to allow other widgets to process their events first
+                if not window_closed[0]:
+                    cal_window.after(100, close_calendar)
             
             cal_window.bind('<Escape>', on_escape)
-            cal.focus()
+            cal_window.bind('<FocusOut>', on_focus_out)
             
+            # Also close calendar if main window gets focus (tab switching)
+            def on_main_window_focus(event=None):
+                if not window_closed[0]:
+                    cal_window.after(50, close_calendar)
             
+            root.bind('<FocusIn>', on_main_window_focus)
+            
+            # Set focus to calendar to prevent immediate close
+            cal_window.focus_set()
             
         except Exception as e:
             messagebox.showerror("Calendar Error", f"Could not open calendar: {e}")
