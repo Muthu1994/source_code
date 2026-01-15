@@ -714,8 +714,8 @@ class ClinicApp(tk.Tk):
         
         # Initialize database and run migrations
         init_db()
-        # migrate_remove_unique_phone()
-        # migrate_op_number_to_text()
+        migrate_remove_unique_phone()
+        migrate_op_number_to_text()
         
         # State
         self.current_patient_id = None
@@ -1007,13 +1007,27 @@ class ClinicApp(tk.Tk):
         first_entry.focus()
 
     def _on_notebook_tab_changed(self, event=None):
-        """Handle notebook tab changes to lazy-load patient list on first view"""
+        """Handle notebook tab changes to lazy-load patient list and reset search filters"""
         selected_tab_index = self.nb.index(self.nb.select())
         
         # Load patient list when Patients tab is first viewed
         if selected_tab_index == 0 and not self.patients_tab_initialized:
             self.patients_tab_initialized = True
             self.on_patients_search()
+        
+        # Reset search fields when leaving Browse/Search tab (Tab 3)
+        # This happens when user switches to any other tab (Patients, Case, Calendar)
+        if selected_tab_index != 3:
+            # Clear all search filters
+            self.var_s_name.set("")
+            self.var_s_phone.set("")
+            self.var_s_dx.set("")
+            self.search_from_entry.delete(0, "end")
+            self.search_to_entry.delete(0, "end")
+            self.search_page = 0
+            # Clear the search results tree view
+            for iid in self.search_tree.get_children():
+                self.search_tree.delete(iid)
 
     
     def on_patients_search(self):
@@ -1051,28 +1065,112 @@ class ClinicApp(tk.Tk):
             conn = sqlite3.connect(DB_FILE)
             rows = conn.execute(sql, params).fetchall()
             conn.close()        
-                    
-            for r in rows:
-                self.p_tree.insert("", "end", values=r)
-
-            if len(rows) == 0 and not name and not phone:                
-                conn = sqlite3.connect(DB_FILE)                
-                total_count = conn.execute("SELECT COUNT(*) FROM patients").fetchone()[0]
-                print("Debug: No patients found in database")
-                conn.close()
-                if total_count == 0:
-                    print("Debug: No patients found in database")
+            
+            # If no results found, clear patient details, case history, and case sheet
+            if len(rows) == 0:
+                # Clear patient information fields
+                self.var_first.set("")
+                self.var_last.set("")
+                self.var_gender.set("")
+                self.dob_entry.delete(0, "end")
+                self.var_phone.set("")
+                self.var_email.set("")
+                self.var_address.set("")
+                self.age_label.config(text="")
+                
+                # Clear case history tree view
+                for iid in self.c_tree.get_children():
+                    self.c_tree.delete(iid)
+                
+                # Clear case sheet details
+                self.clear_case_sheet()
+                
+                self.current_patient_id = None
+                
+                if name or phone:
+                    print(f"Debug: No patients found matching criteria")
                 else:
-                    print(f"Debug : Found {total_count} total patients found but none match criteria")
+                    conn = sqlite3.connect(DB_FILE)                
+                    total_count = conn.execute("SELECT COUNT(*) FROM patients").fetchone()[0]
+                    print("Debug: No patients found in database")
+                    conn.close()
+                    if total_count == 0:
+                        print("Debug: No patients found in database")
+                    else:
+                        print(f"Debug : Found {total_count} total patients found but none match criteria")
             else:
+                for r in rows:
+                    self.p_tree.insert("", "end", values=r)
                 print(f"Debug : Loaded {len(rows)} patients into tree")
         except sqlite3.Error as e:
             messagebox.showerror("Database error",f"Could not search patients.\n{e}")
 
+    def clear_case_sheet(self):
+        """Clear all case sheet fields"""
+        self.current_case_id = None
+        self.var_op_number.set("")
+        self.case_date_entry.delete(0, "end")
+        self.followup_date_entry.delete(0, "end")
+        self.var_case_status.set("Open")
+        self.entry_cc.delete(0, "end")
+        self.txt_medical_history.delete("1.0", "end")
+        self.txt_dental_history.delete("1.0", "end")
+        self.txt_exam.delete("1.0", "end")
+        self.txt_dx.delete("1.0", "end")
+        self.var_bp.set("")
+        self.var_hr.set("")
+        self.var_temp.set("")
+        # Clear treatment plan items
+        self.plan_items.clear()
+        for iid in self.plan_tree.get_children():
+            self.plan_tree.delete(iid)
+        # Clear scan images
+        for iid in self.scans_tree.get_children():
+            self.scans_tree.delete(iid)
+
     def on_patients_clear(self):
+        """Clear all patient-related information from the UI and reload full patient list"""
+        # Clear search fields
         self.var_p_name.set("")
         self.var_p_phone.set("")
-        self.on_patients_search()
+        
+        # Clear patient information fields
+        self.current_patient_id = None
+        self.var_first.set("")
+        self.var_last.set("")
+        self.var_gender.set("")
+        self.dob_entry.delete(0, "end")
+        self.var_phone.set("")
+        self.var_email.set("")
+        self.var_address.set("")
+        self.age_label.config(text="")
+        
+        # Clear case history tree
+        self.c_tree.delete(*self.c_tree.get_children())
+        
+        # Clear case sheet
+        self.clear_case_sheet()
+        
+        # Reload all patients into the tree
+        self.p_tree.delete(*self.p_tree.get_children())
+        try:
+            conn = sqlite3.connect(DB_FILE)
+            rows = conn.execute("""
+                SELECT id, first_name, last_name,
+                COALESCE(phone, '') as phone,
+                COALESCE(email, '') as email,
+                COALESCE(dob, '') as dob
+                FROM patients
+                ORDER BY last_name, first_name
+                LIMIT 500
+            """).fetchall()
+            conn.close()
+            
+            for r in rows:
+                self.p_tree.insert("", "end", values=r)
+            print(f"Debug: Reloaded {len(rows)} patients into tree")
+        except sqlite3.Error as e:
+            messagebox.showerror("Database error", f"Could not reload patients.\n{e}")
 
     def on_new_patient(self):
         self.current_patient_id = None
@@ -1122,7 +1220,6 @@ class ClinicApp(tk.Tk):
         self.var_bp.set("")
         self.var_hr.set("")
         self.var_temp.set("")
-        self.var_weight.set("")
         for iid in self.plan_tree.get_children():
             self.plan_tree.delete(iid)
         self.plan_items.clear()
@@ -1175,30 +1272,23 @@ class ClinicApp(tk.Tk):
             self.var_last.set(last or "")
             self.var_gender.set(gender or "")
             
-            # Handle DOB field - treat as text field to avoid state carryover
-            if DateEntry:
-                try:
-                    # Always clear the field completely first
-                    self.dob_entry.delete(0, "end")
-                    # Insert the text value directly if it exists
-                    # This avoids using set_date() which has internal state issues
-                    if dob and str(dob).strip():
-                        self.dob_entry.insert(0, dob)
-                except Exception as e:
-                    try:
-                        self.dob_entry.delete(0, "end")
-                    except:
-                        pass
-            else:
+            # Handle DOB field - clear and set the value
+            try:
                 self.dob_entry.delete(0, "end")
                 if dob and str(dob).strip():
-                    self.dob_entry.insert(0, dob)
+                    self.dob_entry.insert(0, str(dob).strip())
+            except Exception as e:
+                print(f"Error setting DOB: {e}")
+                try:
+                    self.dob_entry.delete(0, "end")
+                except:
+                    pass
         
             self.var_phone.set(phone or "")
             self.var_email.set(email or "")
             self.var_address.set(address or "")
             
-            # Update age display
+            # Update age display after setting DOB
             self.update_age()
         
         self.load_case_history_for_patient(self.current_patient_id)
@@ -1251,7 +1341,7 @@ class ClinicApp(tk.Tk):
         """Open a calendar popup for date selection"""
         try:
             from tkcalendar import Calendar
-            from datetime import datetime
+            from datetime import datetime, date
             
             # Get the root window from the entry widget
             root = entry_widget.winfo_toplevel()
@@ -1267,11 +1357,12 @@ class ClinicApp(tk.Tk):
             y = entry_widget.winfo_rooty() + entry_widget.winfo_height()
             cal_window.wm_geometry("+%d+%d" % (x, y))
             
-            # Get current value if any
+            # Get current value if any, otherwise use today's date
             current_val = entry_widget.get().strip()
-            init_year = 2025
-            init_month = 1
-            init_day = 1
+            today = date.today()
+            init_year = today.year
+            init_month = today.month
+            init_day = today.day
             
             if current_val:
                 try:
@@ -1282,11 +1373,11 @@ class ClinicApp(tk.Tk):
                 except:
                     pass
             
-            # Create calendar 
+            # Create calendar with today's date as default
             cal = Calendar(cal_window, selectmode='day', year=init_year, month=init_month, day=init_day)
             cal.pack(padx=10, pady=10)
             
-            def on_date_select():
+            def on_date_select(event=None):
                 try:
                     # Get the selected date from the calendar
                     selected_date = cal.selection_get()
@@ -1295,6 +1386,9 @@ class ClinicApp(tk.Tk):
                         date_str = selected_date.strftime('%Y-%m-%d')
                         entry_widget.delete(0, 'end')
                         entry_widget.insert(0, date_str)
+                        # Update age if this is the DOB field
+                        if hasattr(self, 'dob_entry') and entry_widget == self.dob_entry:
+                            self.update_age()
                     cal_window.destroy()
                 except Exception as e:
                     print(f"Date selection error: {e}")
@@ -1307,11 +1401,8 @@ class ClinicApp(tk.Tk):
                 except:
                     pass
             
-            # Add buttons for confirmation
-            btn_frame = ttk.Frame(cal_window)
-            btn_frame.pack(padx=10, pady=5)
-            ttk.Button(btn_frame, text="OK", command=on_date_select).pack(side='left', padx=5)
-            ttk.Button(btn_frame, text="Cancel", command=on_escape).pack(side='left', padx=5)
+            # Bind calendar selection to automatically populate date
+            cal.bind('<<CalendarSelected>>', on_date_select)
             
             cal_window.bind('<Escape>', on_escape)
             cal.focus()
@@ -1447,20 +1538,15 @@ class ClinicApp(tk.Tk):
             phone = safe_str(self.var_phone.get()) or None
             emil = safe_str(self.var_email.get()) or None
             address = safe_str(self.var_address.get()) or None
-            dob = '' 
-            if DateEntry:
+            
+            # Get DOB from entry field (always use get() since we're using ttk.Entry)
+            dob = safe_str(self.dob_entry.get()).strip() or None
+            if dob:
+                # Validate date format is YYYY-MM-DD
                 try:
-                    d = self.dob_entry.get_date()
-                    if isinstance(d, str):
-                        dob = d
-                    else:
-                        dob = datetime(d.year, d.month, d.day).strftime("%Y-%m-%d")
-                except Exception:
-                    dob = ''
-            else:
-                dob = safe_str(self.dob_entry.get()) or None
-                if dob:
-                    parse_date(dob)  # Validate date format
+                    parse_date(dob)
+                except ValueError:
+                    raise ValueError("Date of Birth must be in YYYY-MM-DD format")
             
             conn = sqlite3.connect(DB_FILE)
             #with conn:
@@ -1564,22 +1650,26 @@ class ClinicApp(tk.Tk):
         except ImportError:
             pass
 
-        # Second row: Follow-up Date and Case Status
+        # Second row: Follow-up Date
         ttk.Label(case_info_frame, text="Next Appointment Date (YYYY-MM-DD)", font=("Segoe UI", 9, "bold")).grid(row=1, column=0, sticky="w", pady=5)
-        # Use a regular Entry field to prevent auto-population
-        self.followup_date_entry = ttk.Entry(case_info_frame, font=("Segoe UI", 10))
-        self.followup_date_entry.grid(row=1, column=1, sticky="ew", padx=(5, 15), pady=5)
+        # Use a regular Entry field with calendar button
+        followup_frame = ttk.Frame(case_info_frame)
+        followup_frame.grid(row=1, column=1, sticky="ew", padx=(5, 15), pady=5)
+        followup_frame.columnconfigure(0, weight=1)
         
-        # Add a calendar button if tkcalendar is available
+        self.followup_date_entry = ttk.Entry(followup_frame, font=("Segoe UI", 10))
+        self.followup_date_entry.grid(row=0, column=0, sticky="ew", padx=(0, 5))
+        
         try:
             from tkcalendar import Calendar
             def open_followup_date_calendar():
                 self.open_date_picker_calendar(self.followup_date_entry)
-            cal_btn = ttk.Button(case_info_frame, text="📅", width=3, command=open_followup_date_calendar)
-            cal_btn.grid(row=1, column=2, padx=2)
+            cal_btn = ttk.Button(followup_frame, text="📅", width=3, command=open_followup_date_calendar)
+            cal_btn.grid(row=0, column=1, padx=2)
         except ImportError:
             pass
         
+        # Third column: Case Status
         ttk.Label(case_info_frame, text="Case Status", font=("Segoe UI", 9, "bold")).grid(row=1, column=2, sticky="w", pady=5)
         status_combo = ttk.Combobox(case_info_frame, textvariable=self.var_case_status,
             values=("Open", "In Progress", "Closed", "Cancelled"),
@@ -1677,51 +1767,108 @@ class ClinicApp(tk.Tk):
         scans_frame = ttk.LabelFrame(content_frame, text="Medical Scan Images", padding=15)
         scans_frame.grid(row=row, column=0, columnspan=2, sticky="nsew", padx=5, pady=(0,10))
         scans_frame.columnconfigure(0, weight=1)
+        scans_frame.columnconfigure(1, weight=3)  # Give preview panel 3x more space
         scans_frame.rowconfigure(2, weight=1)
         
-        # Upload buttons
+        # Upload buttons (span both columns)
         scan_btn_frame = ttk.Frame(scans_frame)
-        scan_btn_frame.grid(row=0, column=0, sticky="ew", pady=(0, 10))
+        scan_btn_frame.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 10))
         
         ttk.Button(scan_btn_frame, text="+ Add Scan Images", command=self.on_add_scan_images).pack(side="left", padx=(0, 5))
         ttk.Button(scan_btn_frame, text="View Selected", command=self.on_view_scan_image).pack(side="left", padx=5)
+        ttk.Button(scan_btn_frame, text="Edit Selected", command=self.on_edit_scan_image, width=15).pack(side="left", padx=5)
         ttk.Button(scan_btn_frame, text="Delete Selected", command=self.on_delete_scan_image).pack(side="left", padx=5)
-        ttk.Button(scan_btn_frame, text="Save Notes", command=self.on_save_scan_notes, width=12).pack(side="left", padx=(0, 5))
+        ttk.Button(scan_btn_frame, text="Save Changes", command=self.on_save_scan_changes, width=15).pack(side="left", padx=(0, 5))
         
-        # Scan type selector
+        # Scan type and notes editor (span both columns)
         scan_type_frame = ttk.Frame(scans_frame)
-        scan_type_frame.grid(row=1, column=0, sticky="ew", pady=(0, 10))
+        scan_type_frame.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 10))
         ttk.Label(scan_type_frame, text="Scan Type:", font=("Segoe UI", 9, "bold")).pack(side="left", padx=(0, 5))
         self.var_scan_type = tk.StringVar(value="X-Ray")
-        scan_type_combo = ttk.Combobox(scan_type_frame, textvariable=self.var_scan_type,
+        self.scan_type_combo = ttk.Combobox(scan_type_frame, textvariable=self.var_scan_type,
             values=("X-Ray", "CT Scan", "MRI", "Ultrasound", "Photograph", "Intra-oral", "Extra-oral", "Other"),
             state="readonly", font=("Segoe UI", 9), width=20)
-        scan_type_combo.pack(side="left", padx=(0, 20))
+        self.scan_type_combo.pack(side="left", padx=(0, 20))
         
         ttk.Label(scan_type_frame, text="Notes:", font=("Segoe UI", 9, "bold")).pack(side="left", padx=(0, 5))
         self.var_scan_notes = tk.StringVar()
         self.var_selected_scan_id = None  # Track currently selected scan image
-        scan_notes_entry = ttk.Entry(scan_type_frame, textvariable=self.var_scan_notes, font=("Segoe UI", 9), width=50)
-        scan_notes_entry.pack(side="left", fill="x", expand=True, padx=(0, 0))
+        self.scan_notes_entry = ttk.Entry(scan_type_frame, textvariable=self.var_scan_notes, font=("Segoe UI", 9), width=50)
+        self.scan_notes_entry.pack(side="left", fill="x", expand=True, padx=(0, 0))
         
-        # Scans list
+        # === LEFT SIDE: Scans list ===
         scan_cols = ("type", "filename", "upload_date", "notes")
         self.scans_tree = ttk.Treeview(scans_frame, columns=scan_cols, show="headings", height=8)
         scan_headers = {
             "type": "Scan Type", "filename": "File Name",
             "upload_date": "Upload Date", "notes": "Notes"
         }
-        scan_widths = (120, 250, 150, 200)
+        scan_widths = (80, 100, 80, 80)  # More compact widths
         for (c, w) in zip(scan_cols, scan_widths):
             self.scans_tree.heading(c, text=scan_headers[c])
             self.scans_tree.column(c, width=w, anchor="w")
-        self.scans_tree.grid(row=2, column=0, sticky="nsew", pady=(0, 10))
+        self.scans_tree.grid(row=2, column=0, sticky="nsew", padx=(0, 5))
         
         scan_scroll = ttk.Scrollbar(scans_frame, orient="vertical", command=self.scans_tree.yview)
-        scan_scroll.grid(row=2, column=1, sticky="ns")
+        scan_scroll.grid(row=2, column=0, sticky="nse")
         self.scans_tree.configure(yscrollcommand=scan_scroll.set)
         
-        # Bind tree view selection to load notes
+        # === RIGHT SIDE: Image preview ===
+        preview_frame = ttk.LabelFrame(scans_frame, text="Image Preview", padding=5)
+        preview_frame.grid(row=2, column=1, sticky="nsew", padx=(5, 0))
+        preview_frame.columnconfigure(0, weight=1)
+        preview_frame.rowconfigure(1, weight=1)
+        
+        # Zoom controls
+        zoom_ctrl_frame = ttk.Frame(preview_frame)
+        zoom_ctrl_frame.grid(row=0, column=0, sticky="ew", pady=(0, 5))
+        
+        ttk.Button(zoom_ctrl_frame, text="🔍−", command=self.zoom_image_out, width=4).pack(side="left", padx=2)
+        ttk.Button(zoom_ctrl_frame, text="🔍+", command=self.zoom_image_in, width=4).pack(side="left", padx=2)
+        ttk.Button(zoom_ctrl_frame, text="Fit", command=self.zoom_image_fit, width=5).pack(side="left", padx=2)
+        ttk.Button(zoom_ctrl_frame, text="100%", command=self.zoom_image_actual, width=5).pack(side="left", padx=2)
+        
+        # Zoom level display
+        ttk.Label(zoom_ctrl_frame, text="Zoom: ", font=("Segoe UI", 8)).pack(side="left", padx=(10, 2))
+        self.zoom_level_var = tk.StringVar(value="Fit")
+        ttk.Label(zoom_ctrl_frame, textvariable=self.zoom_level_var, font=("Segoe UI", 8, "bold")).pack(side="left")
+        
+        # Canvas with scrollbars for image preview
+        canvas_frame = ttk.Frame(preview_frame)
+        canvas_frame.grid(row=1, column=0, sticky="nsew")
+        canvas_frame.columnconfigure(0, weight=1)
+        canvas_frame.rowconfigure(0, weight=1)
+        
+        # Vertical scrollbar
+        vscroll = ttk.Scrollbar(canvas_frame, orient="vertical")
+        vscroll.grid(row=0, column=1, sticky="ns")
+        
+        # Horizontal scrollbar
+        hscroll = ttk.Scrollbar(canvas_frame, orient="horizontal")
+        hscroll.grid(row=1, column=0, sticky="ew")
+        
+        # Canvas for image preview with scrollbars
+        self.scan_preview_canvas = tk.Canvas(canvas_frame, bg="white", highlightthickness=1, highlightbackground="gray",
+                                            yscrollcommand=vscroll.set, xscrollcommand=hscroll.set)
+        self.scan_preview_canvas.grid(row=0, column=0, sticky="nsew")
+        
+        vscroll.configure(command=self.scan_preview_canvas.yview)
+        hscroll.configure(command=self.scan_preview_canvas.xview)
+        
+        # Bind mouse wheel for zoom
+        self.scan_preview_canvas.bind("<MouseWheel>", self.on_preview_mouse_wheel)
+        self.scan_preview_canvas.bind("<Button-4>", self.on_preview_mouse_wheel)  # Linux scroll up
+        self.scan_preview_canvas.bind("<Button-5>", self.on_preview_mouse_wheel)  # Linux scroll down
+        
+        # Store reference to current preview image and zoom state
+        self.current_preview_image = None
+        self.current_preview_photo = None
+        self.current_preview_path = None
+        self.preview_zoom_level = 1.0  # 1.0 = fit to window
+        self.preview_image_id = None  # Canvas item id for the image
+        self.preview_zoom_mode = "fit"  # "fit", "100", or custom zoom level
+        
+        # Bind tree view selection to load notes and preview
         self.scans_tree.bind("<<TreeviewSelect>>", self.on_scan_image_selected)
         
         row += 1
@@ -1735,8 +1882,8 @@ class ClinicApp(tk.Tk):
         self.var_bp = tk.StringVar()
         self.var_hr = tk.StringVar()
         self.var_temp = tk.StringVar()
-        self.var_weight = tk.StringVar()
         
+        # Single row with three fields: Blood Pressure, Heart Rate, RBS Level
         ttk.Label(vitals_frame, text="Blood Pressure:", font=("Segoe UI", 9, "bold")).grid(row=0, column=0, sticky="w", pady=5)
         bp_entry = ttk.Entry(vitals_frame, textvariable=self.var_bp, width=12, font=("Segoe UI", 10))
         bp_entry.grid(row=0, column=1, sticky="w", padx=(5,15), pady=5)
@@ -1747,15 +1894,10 @@ class ClinicApp(tk.Tk):
         hr_entry.grid(row=0, column=4, sticky="w", padx=(5, 10), pady=5)
         ttk.Label(vitals_frame, text="bpm", font=("Segoe UI", 8),foreground="gray").grid(row=0, column=5, sticky="w")
 
-        ttk.Label(vitals_frame, text="RBS Level:", font=("Segoe UI", 9, "bold")).grid(row=1, column=0, sticky="w", pady=5)
+        ttk.Label(vitals_frame, text="RBS Level:", font=("Segoe UI", 9, "bold")).grid(row=0, column=6, sticky="w", pady=5)
         temp_entry = ttk.Entry(vitals_frame, textvariable=self.var_temp, width=8, font=("Segoe UI", 10))
-        temp_entry.grid(row=1, column=1, sticky="w", padx=(5, 10), pady=5)
-        ttk.Label(vitals_frame, text="(mg/dl)", font=("Segoe UI", 8),foreground="gray").grid(row=1, column=2, sticky="w")
-
-        ttk.Label(vitals_frame, text="Scan Type:", font=("Segoe UI", 9, "bold")).grid(row=1, column=3, sticky="w", pady=5)
-        weight_entry = ttk.Entry(vitals_frame, textvariable=self.var_weight, width=8, font=("Segoe UI", 10))
-        weight_entry.grid(row=1, column=4, sticky="ew", padx=(5,10), pady=5)
-        ttk.Label(vitals_frame, text="X-Ray/MRI/CT Scan", font=("Segoe UI", 8),foreground="gray").grid(row=1, column=5, sticky="w")
+        temp_entry.grid(row=0, column=7, sticky="w", padx=(5, 10), pady=5)
+        ttk.Label(vitals_frame, text="(mg/dl)", font=("Segoe UI", 8),foreground="gray").grid(row=0, column=8, sticky="w")
                 
         row += 1
         
@@ -1806,15 +1948,23 @@ class ClinicApp(tk.Tk):
         duration_entry.grid(row=2, column=1, sticky="ew", padx=(5,15), pady=5)
 
         ttk.Label(plan_input_frame, text="Start Date:",font=("Segoe UI", 9, "bold")).grid(row=2, column=2, sticky="w", pady=5)
+        # Use a regular Entry field for start date with calendar button
+        start_date_frame = ttk.Frame(plan_input_frame)
+        start_date_frame.grid(row=2, column=3, sticky="ew", padx=(5,0), pady=5)
+        start_date_frame.columnconfigure(0, weight=1)
+        
+        self.start_date_entry = ttk.Entry(start_date_frame, font=("Segoe UI", 10))
+        self.start_date_entry.grid(row=0, column=0, sticky="ew", padx=(0, 5))
+        
+        # Add calendar button for start date
         try:
-            from tkcalendar import DateEntry as DateEntryWidget
-            self.start_date_entry = DateEntryWidget(plan_input_frame, date_pattern='yyyy-mm-dd', font=("Segoe UI", 10))
-            self.start_date_entry.grid(row=2, column=3, sticky="ew", padx=(5,0), pady=5)
-            # Clear default date to show empty field
-            self.start_date_entry.delete(0, 'end')
+            from tkcalendar import Calendar
+            def open_start_date_calendar():
+                self.open_date_picker_calendar(self.start_date_entry)
+            cal_btn = ttk.Button(start_date_frame, text="📅", width=3, command=open_start_date_calendar)
+            cal_btn.grid(row=0, column=1, padx=2)
         except ImportError:
-            self.start_date_entry = ttk.Entry(plan_input_frame, font=("Segoe UI", 10))
-            self.start_date_entry.grid(row=2, column=3, sticky="ew", padx=(5,0), pady=5)
+            pass
 
         #Row 4 status and notes
         
@@ -2059,6 +2209,16 @@ class ClinicApp(tk.Tk):
                 print(f"Calendar loaded with {len(set(revisit_dates))} appointment dates")
             else:
                 print("No appointment dates found in calendar")
+            
+            # Refresh the tree view with currently selected date
+            try:
+                selected_date = self.calendar.get_date()
+                self.on_calendar_selected()
+            except Exception as e:
+                print(f"Error refreshing tree view: {e}")
+                # Clear tree view if there's an error
+                for iid in self.calendar_tree.get_children():
+                    self.calendar_tree.delete(iid)
         except Exception as e:
             messagebox.showerror("Calendar Error", f"Could not load revisit dates:\n{e}")
             print(f"Calendar error: {e}")
@@ -2156,23 +2316,41 @@ class ClinicApp(tk.Tk):
         ttk.Label(f, text="Phone").grid(row=row, column=2, sticky="w")
         ttk.Entry(f, textvariable=self.var_s_phone).grid(row=row, column=3, sticky="ew", padx=4, pady=4)
         ttk.Label(f, text="From Date:").grid(row=row, column=4, sticky="w")
-        if DateEntry:
-            self.search_from_entry = DateEntry(f, date_pattern='yyyy-mm-dd', font=("Segoe UI", 9))
-            self.search_from_entry.grid(row=row, column=5, sticky="ew", padx=4, pady=4)
-            # Clear default date to show empty field
-            self.search_from_entry.delete(0, 'end')
-        else:
-            self.search_from_entry = ttk.Entry(f, font=("Segoe UI", 9))
-            self.search_from_entry.grid(row=row, column=5, sticky="ew", padx=4, pady=4)
+        # Use a regular Entry field with calendar button
+        from_date_frame = ttk.Frame(f)
+        from_date_frame.grid(row=row, column=5, sticky="ew", padx=4, pady=4)
+        from_date_frame.columnconfigure(0, weight=1)
+        
+        self.search_from_entry = ttk.Entry(from_date_frame, font=("Segoe UI", 9))
+        self.search_from_entry.grid(row=0, column=0, sticky="ew", padx=(0, 2))
+        
+        # Add calendar button for from date
+        try:
+            from tkcalendar import Calendar
+            def open_from_date_calendar():
+                self.open_date_picker_calendar(self.search_from_entry)
+            cal_btn = ttk.Button(from_date_frame, text="📅", width=3, command=open_from_date_calendar)
+            cal_btn.grid(row=0, column=1, padx=2)
+        except ImportError:
+            pass
         ttk.Label(f, text="To Date:").grid(row=row, column=6, sticky="w")
-        if DateEntry:
-            self.search_to_entry = DateEntry(f, date_pattern='yyyy-mm-dd', font=("Segoe UI", 9))
-            self.search_to_entry.grid(row=row, column=7, sticky="ew", padx=4, pady=4)
-            # Clear default date to show empty field
-            self.search_to_entry.delete(0, 'end')
-        else:
-            self.search_to_entry = ttk.Entry(f, font=("Segoe UI", 9))
-            self.search_to_entry.grid(row=row, column=7, sticky="ew", padx=4, pady=4)
+        # Use a regular Entry field with calendar button
+        to_date_frame = ttk.Frame(f)
+        to_date_frame.grid(row=row, column=7, sticky="ew", padx=4, pady=4)
+        to_date_frame.columnconfigure(0, weight=1)
+        
+        self.search_to_entry = ttk.Entry(to_date_frame, font=("Segoe UI", 9))
+        self.search_to_entry.grid(row=0, column=0, sticky="ew", padx=(0, 2))
+        
+        # Add calendar button for to date
+        try:
+            from tkcalendar import Calendar
+            def open_to_date_calendar():
+                self.open_date_picker_calendar(self.search_to_entry)
+            cal_btn = ttk.Button(to_date_frame, text="📅", width=3, command=open_to_date_calendar)
+            cal_btn.grid(row=0, column=1, padx=2)
+        except ImportError:
+            pass
         row += 1
         
         ttk.Label(f, text="Diagnosis (contains)").grid(row=row, column=0, sticky="w")
@@ -2222,14 +2400,8 @@ class ClinicApp(tk.Tk):
             dosage = safe_str(self.var_dosage.get())
             frequency = safe_str(self.var_frequency.get())
             duration = safe_str(self.var_duration.get())
-            start = ""
-            if DateEntry:
-                try:
-                    start = self.start_date_entry.get_date().strftime("%Y-%m-%d")
-                except:
-                    start = ""
-            else:
-                start = safe_str(self.start_date_entry.get())
+            # Get start date from entry field
+            start = safe_str(self.start_date_entry.get()).strip() or ""
             status = safe_str(self.var_status.get() or "Planned")
             notes = safe_str(self.var_notes.get())
             if start:
@@ -2282,22 +2454,13 @@ class ClinicApp(tk.Tk):
         self.var_frequency.set(current_item.get("frequency", ""))
         self.var_duration.set(current_item.get("duration", ""))
         
-        # Set start date in DateEntry
+        # Set start date in entry field
         start_date_str = current_item.get("start", "")
-        if DateEntry:
-            if start_date_str:
-                try:
-                    self.start_date_entry.set_date(parse_date(start_date_str).date())
-                except:
-                    self.start_date_entry.set_date(datetime.now().date())
-            else:
-                self.start_date_entry.set_date(datetime.now().date())
+        self.start_date_entry.delete(0, "end")
+        if start_date_str:
+            self.start_date_entry.insert(0, start_date_str)
         else:
-            self.start_date_entry.delete(0, "end")
-            if start_date_str:
-                self.start_date_entry.insert(0, start_date_str)
-            else:
-                self.start_date_entry.insert(0, iso_today())
+            self.start_date_entry.insert(0, iso_today())
         
         self.var_status.set(current_item.get("status", "Planned"))
         self.var_notes.set(current_item.get("notes", ""))
@@ -2319,14 +2482,8 @@ class ClinicApp(tk.Tk):
             dosage = safe_str(self.var_dosage.get())
             frequency = safe_str(self.var_frequency.get())
             duration = safe_str(self.var_duration.get())
-            start = ""
-            if DateEntry:
-                try:
-                    start = self.start_date_entry.get_date().strftime("%Y-%m-%d")
-                except:
-                    start = ""
-            else:
-                start = safe_str(self.start_date_entry.get())
+            # Get start date from entry field
+            start = safe_str(self.start_date_entry.get()).strip() or ""
             status = safe_str(self.var_status.get() or "Planned")
             notes = safe_str(self.var_notes.get())
             
@@ -2363,14 +2520,8 @@ class ClinicApp(tk.Tk):
         self.var_dosage.set("")
         self.var_frequency.set("")
         self.var_duration.set("")
-        if DateEntry:
-            try:
-                self.start_date_entry.set_date(datetime.now().date())
-            except:
-                pass
-        else:
-            self.start_date_entry.delete(0, "end")
-            self.start_date_entry.insert(0, iso_today())
+        # Clear start date entry field
+        self.start_date_entry.delete(0, "end")
         self.var_status.set("Planned")
         self.var_notes.set("")
 
@@ -2426,7 +2577,6 @@ class ClinicApp(tk.Tk):
         self.var_bp.set("")
         self.var_hr.set("")
         self.var_temp.set("")
-        self.var_weight.set("")
         self.plan_items.clear()
         for iid in self.plan_tree.get_children():
             self.plan_tree.delete(iid)
@@ -2462,29 +2612,22 @@ class ClinicApp(tk.Tk):
             # except ValueError:
             #     raise ValueError("OP Number must be a valid positive integer.")
             
-            # Check if op_number is unique for this date
-            # case_date = self.var_case_date.get()
-            case_date = ''
-            if DateEntry:
-                d = self.case_date_entry.get_date()
-                if isinstance(d, str):
-                    case_date = safe_str(d)
-                else:
-                    case_date = datetime(d.year, d.month, d.day).strftime("%Y-%m-%d")
+            # Get case date and follow-up date from entry fields
+            case_date = safe_str(self.case_date_entry.get()).strip()
+            if case_date:
+                try:
+                    parse_date(case_date)  # Validate date format
+                except ValueError:
+                    raise ValueError("Case Date must be in YYYY-MM-DD format")
             else:
-                case_date = safe_str(self.case_date_entry.get())
-                parse_date(case_date)
-            follow_up = ''
-            if DateEntry:
-                fd = self.followup_date_entry.get_date()
-                if isinstance(fd, str):
-                    follow_up = safe_str(fd)
-                else:
-                    follow_up = datetime(fd.year, fd.month, fd.day).strftime("%Y-%m-%d")
-            else:
-                follow_up = safe_str(self.followup_date_entry.get())
-                if follow_up:
-                    parse_date(follow_up)
+                case_date = iso_today()  # Default to today if not provided
+            
+            follow_up = safe_str(self.followup_date_entry.get()).strip() or None
+            if follow_up:
+                try:
+                    parse_date(follow_up)  # Validate date format
+                except ValueError:
+                    raise ValueError("Follow-up Date must be in YYYY-MM-DD format")
             conn = sqlite3.connect(DB_FILE)
             existing = conn.execute(
                 "SELECT id FROM cases WHERE op_number = ? AND case_date = ? AND id != ?",
@@ -2529,7 +2672,7 @@ class ClinicApp(tk.Tk):
                             self.current_patient_id, op_number, case_date, follow_up or None, case_status, closed_date,
                             cc, medical_history, dental_history, exam, dx,
                             safe_str(self.var_bp.get()), safe_str(self.var_hr.get()),
-                            safe_str(self.var_temp.get()), safe_str(self.var_weight.get())
+                            safe_str(self.var_temp.get()), None
                         )
                     )
                     self.current_case_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
@@ -2546,7 +2689,7 @@ class ClinicApp(tk.Tk):
                         op_number, case_date, follow_up or None, case_status, closed_date,
                         cc, medical_history, dental_history, exam, dx,
                         safe_str(self.var_bp.get()), safe_str(self.var_hr.get()),
-                        safe_str(self.var_temp.get()), safe_str(self.var_weight.get()), self.current_case_id
+                        safe_str(self.var_temp.get()), None, self.current_case_id
                     )
                     )
                     
@@ -2570,8 +2713,13 @@ class ClinicApp(tk.Tk):
             # Refresh case history panel if patient selected
             if self.current_patient_id:
                 self.load_case_history_for_patient(self.current_patient_id)
-            # Refresh browse tab
-            self.on_search()
+            # Refresh browse tab only if user has applied search filters
+            if (safe_str(self.var_s_name.get()).strip() or 
+                safe_str(self.var_s_phone.get()).strip() or 
+                safe_str(self.var_s_dx.get()).strip() or
+                safe_str(self.search_from_entry.get()).strip() or
+                safe_str(self.search_to_entry.get()).strip()):
+                self.on_search()
             
             # Refresh calendar to show updated revisit dates
             self.refresh_calendar()
@@ -2729,11 +2877,13 @@ class ClinicApp(tk.Tk):
             messagebox.showerror("Error", f"Could not delete scan image:\n{e}")
 
     def on_scan_image_selected(self, event=None):
-        """Load notes for selected scan image into the Notes input field"""
+        """Load scan type, notes, and display image preview for selected scan image"""
         sel = self.scans_tree.selection()
         if not sel:
             self.var_selected_scan_id = None
+            self.var_scan_type.set("X-Ray")
             self.var_scan_notes.set("")
+            self.display_scan_preview(None)
             return
         
         try:
@@ -2742,40 +2892,195 @@ class ClinicApp(tk.Tk):
             
             conn = sqlite3.connect(DB_FILE)
             result = conn.execute("""
-                SELECT notes FROM case_scan_images WHERE id = ?
+                SELECT image_type, notes, image_path FROM case_scan_images WHERE id = ?
             """, (scan_id,)).fetchone()
             conn.close()
             
             if result:
-                notes = result[0] or ""
-                self.var_scan_notes.set(notes)
+                scan_type, notes, image_path = result
+                self.var_scan_type.set(scan_type or "X-Ray")
+                self.var_scan_notes.set(notes or "")
+                self.display_scan_preview(image_path)
             else:
                 self.var_selected_scan_id = None
+                self.var_scan_type.set("X-Ray")
                 self.var_scan_notes.set("")
+                self.display_scan_preview(None)
         except Exception as e:
-            messagebox.showerror("Error", f"Could not load scan notes:\n{e}")
+            messagebox.showerror("Error", f"Could not load scan details:\n{e}")
+            self.display_scan_preview(None)
 
-    def on_save_scan_notes(self):
-        """Save notes for the currently selected scan image"""
+    def display_scan_preview(self, image_path):
+        """Display image preview on the right side canvas"""
+        if not image_path or not os.path.exists(image_path):
+            # Clear the canvas if no valid image
+            self.scan_preview_canvas.delete("all")
+            self.current_preview_image = None
+            self.current_preview_photo = None
+            self.current_preview_path = None
+            self.preview_zoom_level = 1.0
+            self.preview_zoom_mode = "fit"
+            self.zoom_level_var.set("Fit")
+            return
+        
+        try:
+            from PIL import Image, ImageTk
+            
+            # Store the original image path and load it
+            self.current_preview_path = image_path
+            self.current_preview_image = Image.open(image_path)
+            self.preview_zoom_level = 1.0
+            self.preview_zoom_mode = "fit"
+            self.zoom_level_var.set("Fit")
+            
+            # Display the image with current zoom
+            self.refresh_preview_display()
+        except Exception as e:
+            print(f"Could not display image preview: {e}")
+            self.scan_preview_canvas.delete("all")
+
+    def refresh_preview_display(self):
+        """Refresh the preview display with current zoom level and scrolling"""
+        if not self.current_preview_image or not self.current_preview_path:
+            self.scan_preview_canvas.delete("all")
+            self.scan_preview_canvas.configure(scrollregion=(0, 0, 0, 0))
+            return
+        
+        try:
+            from PIL import Image, ImageTk
+            
+            # Get canvas dimensions
+            canvas_width = self.scan_preview_canvas.winfo_width()
+            canvas_height = self.scan_preview_canvas.winfo_height()
+            
+            # Set default size if canvas not yet drawn
+            if canvas_width <= 1:
+                canvas_width = 400
+            if canvas_height <= 1:
+                canvas_height = 400
+            
+            img = self.current_preview_image.copy()
+            
+            if self.preview_zoom_mode == "fit":
+                # Fit to window mode
+                img.thumbnail((canvas_width - 10, canvas_height - 10), Image.Resampling.LANCZOS)
+                # Center the image in fit mode
+                img_x = canvas_width // 2
+                img_y = canvas_height // 2
+                # Set scroll region to canvas size when fitting
+                self.scan_preview_canvas.configure(scrollregion=(0, 0, canvas_width, canvas_height))
+            elif self.preview_zoom_mode == "100":
+                # Show at 100% - no scaling
+                img_x = img.width // 2
+                img_y = img.height // 2
+                # Set scroll region to image size at 100%
+                self.scan_preview_canvas.configure(scrollregion=(0, 0, img.width, img.height))
+            else:
+                # Custom zoom level
+                new_width = int(img.width * self.preview_zoom_level)
+                new_height = int(img.height * self.preview_zoom_level)
+                img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                img_x = new_width // 2
+                img_y = new_height // 2
+                # Set scroll region to zoomed image size
+                self.scan_preview_canvas.configure(scrollregion=(0, 0, new_width, new_height))
+            
+            # Store reference to prevent garbage collection
+            self.current_preview_photo = ImageTk.PhotoImage(img)
+            
+            # Clear and display on canvas
+            self.scan_preview_canvas.delete("all")
+            self.preview_image_id = self.scan_preview_canvas.create_image(
+                img_x, img_y,
+                image=self.current_preview_photo
+            )
+        except Exception as e:
+            print(f"Could not refresh preview display: {e}")
+
+    def zoom_image_in(self):
+        """Zoom in the preview image"""
+        if not self.current_preview_image:
+            return
+        self.preview_zoom_mode = "custom"
+        self.preview_zoom_level += 0.2
+        self.zoom_level_var.set(f"{int(self.preview_zoom_level * 100)}%")
+        self.refresh_preview_display()
+
+    def zoom_image_out(self):
+        """Zoom out the preview image"""
+        if not self.current_preview_image:
+            return
+        self.preview_zoom_mode = "custom"
+        self.preview_zoom_level = max(0.2, self.preview_zoom_level - 0.2)
+        self.zoom_level_var.set(f"{int(self.preview_zoom_level * 100)}%")
+        self.refresh_preview_display()
+
+    def zoom_image_fit(self):
+        """Fit image to window"""
+        if not self.current_preview_image:
+            return
+        self.preview_zoom_mode = "fit"
+        self.preview_zoom_level = 1.0
+        self.zoom_level_var.set("Fit")
+        self.refresh_preview_display()
+
+    def zoom_image_actual(self):
+        """Show image at 100% size"""
+        if not self.current_preview_image:
+            return
+        self.preview_zoom_mode = "100"
+        self.preview_zoom_level = 1.0
+        self.zoom_level_var.set("100%")
+        self.refresh_preview_display()
+
+    def on_preview_mouse_wheel(self, event):
+        """Handle mouse wheel zoom on preview canvas"""
+        if not self.current_preview_image:
+            return
+        
+        # Determine scroll direction
+        if event.num == 5 or event.delta < 0:
+            self.zoom_image_out()
+        elif event.num == 4 or event.delta > 0:
+            self.zoom_image_in()
+
+    def on_edit_scan_image(self):
+        """Prepare to edit the selected scan image (load its details)"""
+        sel = self.scans_tree.selection()
+        if not sel:
+            messagebox.showwarning("No Selection", "Please select a scan image to edit.")
+            return
+        
+        # Trigger the selection event to load the scan details
+        self.on_scan_image_selected()
+        messagebox.showinfo("Edit Mode", "Scan type and notes are now loaded. Make your changes and click 'Save Changes'.")
+
+    def on_save_scan_changes(self):
+        """Save both scan type and notes for the currently selected scan image"""
         if not self.var_selected_scan_id:
-            messagebox.showwarning("No Selection", "Please select a scan image to save notes.")
+            messagebox.showwarning("No Selection", "Please select a scan image to save changes.")
             return
         
         try:
             scan_id = self.var_selected_scan_id
+            scan_type = safe_str(self.var_scan_type.get() or "X-Ray")
             notes = safe_str(self.var_scan_notes.get())
             
             conn = sqlite3.connect(DB_FILE)
             with conn:
                 conn.execute("""
-                    UPDATE case_scan_images SET notes = ? WHERE id = ?
-                """, (notes if notes else None, scan_id))
+                    UPDATE case_scan_images SET image_type = ?, notes = ? WHERE id = ?
+                """, (scan_type, notes if notes else None, scan_id))
             conn.close()
             
-            messagebox.showinfo("Success", "Scan notes saved successfully.")
+            messagebox.showinfo("Success", "Scan type and notes saved successfully.")
             self.refresh_scan_images_list()
+            # Reset the form
+            self.var_selected_scan_id = None
+            self.var_scan_type.set("X-Ray")
+            self.var_scan_notes.set("")
         except Exception as e:
-            messagebox.showerror("Error", f"Could not save scan notes:\n{e}")
+            messagebox.showerror("Error", f"Could not save scan changes:\n{e}")
 
     # ---------------------- Browse/Search Actions ----------------------
 
@@ -2785,21 +3090,9 @@ class ClinicApp(tk.Tk):
         name = safe_str(self.var_s_name.get()).strip()
         phone = safe_str(self.var_s_phone.get()).strip()
         
-        # Get dates from DateEntry widgets
-        dfrom = ""
-        dto = ""
-        if DateEntry:
-            try:
-                dfrom = self.search_from_entry.get_date().strftime("%Y-%m-%d")
-            except:
-                dfrom = ""
-            try:
-                dto = self.search_to_entry.get_date().strftime("%Y-%m-%d")
-            except:
-                dto = ""
-        else:
-            dfrom = safe_str(self.search_from_entry.get())
-            dto = safe_str(self.search_to_entry.get())
+        # Get dates from regular Entry widgets
+        dfrom = safe_str(self.search_from_entry.get()).strip()
+        dto = safe_str(self.search_to_entry.get()).strip()
         
         dx = safe_str(self.var_s_dx.get()).strip()
         
@@ -2947,7 +3240,6 @@ class ClinicApp(tk.Tk):
             self.var_bp.set("")
             self.var_hr.set("")
             self.var_temp.set("")
-            self.var_weight.set("")
             for iid in self.plan_tree.get_children():
                 self.plan_tree.delete(iid)
             self.plan_items.clear()
@@ -2968,43 +3260,26 @@ class ClinicApp(tk.Tk):
         self.var_last.set(last or "")
         self.var_gender.set(gender or "")
         #self.var_dob.set(dob or "")
-        if DateEntry:
-            try:
-                if dob:
-                    self.dob_entry.set_date(parse_date(dob).date())
-                else:
-                    self.dob_entry.delete(0, "end")
-            except Exception:
-                pass
-        else:
-            self.dob_entry.delete(0, "end")
-            if dob:
-                self.dob_entry.insert(0, dob or "")
+        # Set DOB in entry field
+        self.dob_entry.delete(0, "end")
+        if dob:
+            self.dob_entry.insert(0, str(dob).strip())
         self.var_phone.set(phone or "")
         self.var_email.set(email or "")
         self.var_address.set(address or "")
         # Fill case data
         self.var_op_number.set(str(op_number) if op_number else "")
-        if DateEntry:
-            try:
-                if case_date:
-                    self.case_date_entry.set_date(parse_date(case_date).date())
-                else:
-                    self.case_date_entry.delete(0, "end")
-                    self.case_date_entry.insert(0, case_date or iso_today())
-            except Exception:
-                pass
-            try:
-                if follow_up:
-                    self.followup_date_entry.set_date(parse_date(follow_up).date())
-                else:
-                    self.followup_date_entry.delete(0, "end")
-                    if follow_up:
-                        self.followup_date_entry.insert(0, follow_up or "")
-            except Exception:
-                pass
-        # self.var_case_date.set(case_date or iso_today())
-        # self.var_followup_date.set(follow_up or "")
+        # Set case date in entry field
+        self.case_date_entry.delete(0, "end")
+        if case_date:
+            self.case_date_entry.insert(0, case_date)
+        else:
+            self.case_date_entry.insert(0, iso_today())
+        
+        # Set follow-up date in entry field
+        self.followup_date_entry.delete(0, "end")
+        if follow_up:
+            self.followup_date_entry.insert(0, follow_up)
         self.var_case_status.set(case_status or "Open")
         self.entry_cc.delete(0, "end")
         self.entry_cc.insert(0, cc or "")
@@ -3021,7 +3296,6 @@ class ClinicApp(tk.Tk):
         self.var_bp.set(bp or "")
         self.var_hr.set(hr or "")
         self.var_temp.set(temp or "")
-        self.var_weight.set(weight or "")
         
         # Select the patient in the patient tree view
         self.select_patient_in_tree(self.current_patient_id)
