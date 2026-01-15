@@ -2183,10 +2183,12 @@ class ClinicApp(tk.Tk):
     def build_calendar_tab(self):
         f = self.tab_calendar
         f.columnconfigure(0, weight=1)
-        f.rowconfigure(0, weight=1)
+        f.rowconfigure(0, weight=0)
+        f.rowconfigure(1, weight=0)
+        f.rowconfigure(2, weight=1)
 
         top = ttk.Frame(f)
-        top.grid(row=0, column=0, sticky="ew")
+        top.grid(row=0, column=0, sticky="ew", padx=4, pady=4)
         ttk.Label(top, text="Appointment Calendar", font=("Segoe UI", 16, "bold")).pack(side="left", padx=10, pady=10)
         ttk.Button(top, text="Refresh", command=self.refresh_calendar).pack(side="right", padx=10, pady=10)
         
