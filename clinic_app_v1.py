@@ -202,140 +202,6 @@ def init_db():
     conn.commit()
     conn.close()
 
-def migrate_remove_unique_phone():
-    """Migration to remove UNIQUE constraint from phone column in existing databases"""
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    
-    try:
-        # Check if migration has already been applied by looking at table schema
-        cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='patients'")
-        schema = cursor.fetchone()
-        
-        # If schema contains UNIQUE constraint, migration is needed
-        if not schema or "UNIQUE" not in schema[0]:
-            # Migration already applied or new database
-            return True
-        
-        print("Running migration: Removing UNIQUE constraint from phone...")
-        
-        # Create new table without UNIQUE constraint
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS patients_new (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                first_name TEXT NOT NULL,
-                last_name TEXT NOT NULL,
-                gender TEXT,
-                dob TEXT,
-                phone TEXT,
-                email TEXT,
-                address TEXT
-            )
-        """)
-        
-        # Copy data from old table to new table
-        cursor.execute("""
-            INSERT INTO patients_new (id, first_name, last_name, gender, dob, phone, email, address)
-            SELECT id, first_name, last_name, gender, dob, phone, email, address FROM patients
-        """)
-        
-        # Drop old table
-        cursor.execute("DROP TABLE IF EXISTS patients")
-        
-        # Rename new table to patients
-        cursor.execute("ALTER TABLE patients_new RENAME TO patients")
-        
-        # Recreate indexes
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_patients_phone ON patients(phone)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_patients_name ON patients(last_name, first_name)")
-        
-        conn.commit()
-        print("✓ Migration completed: UNIQUE constraint removed from phone column")
-        return True
-    except Exception as e:
-        print(f"✗ Migration error: {e}")
-        conn.rollback()
-        return False
-    finally:
-        conn.close()
-
-def migrate_op_number_to_text():
-    """Migration to change op_number from INTEGER UNIQUE to TEXT without unique constraint"""
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    
-    try:
-        # Check if migration has already been applied by looking at table schema
-        cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='cases'")
-        schema = cursor.fetchone()
-        
-        # If schema does not contain UNIQUE constraint on op_number, migration already applied
-        if not schema or "op_number INTEGER UNIQUE" not in schema[0]:
-            conn.close()
-            return True
-        
-        print("Running migration: Converting op_number to TEXT and removing UNIQUE constraint...")
-        
-        # Create new table with op_number as TEXT (without UNIQUE)
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS cases_new (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                patient_id INTEGER NOT NULL,
-                op_number TEXT,
-                case_date TEXT NOT NULL DEFAULT (date('now')),
-                follow_up_date TEXT,
-                case_status TEXT DEFAULT 'Open',
-                chief_complaint TEXT NOT NULL,
-                medical_history TEXT,
-                dental_history TEXT,
-                examination TEXT,
-                diagnosis TEXT,
-                consent_obtained BOOLEAN DEFAULT 0,
-                consent_date TEXT,
-                consent_file_path TEXT,
-                vitals_bp TEXT,
-                vitals_hr TEXT,
-                vitals_temp TEXT,
-                vitals_weight TEXT,
-                closed_date TEXT,
-                created_at TEXT NOT NULL DEFAULT (datetime('now')),
-                FOREIGN KEY(patient_id) REFERENCES patients(id) ON DELETE CASCADE
-            )
-        """)
-        
-        # Copy data from old table to new table, converting op_number to TEXT if needed
-        cursor.execute("""
-            INSERT INTO cases_new (id, patient_id, op_number, case_date, follow_up_date, case_status, 
-                                   chief_complaint, medical_history, dental_history, examination, diagnosis,
-                                   consent_obtained, consent_date, consent_file_path, vitals_bp, vitals_hr, 
-                                   vitals_temp, vitals_weight, closed_date, created_at)
-            SELECT id, patient_id, CAST(op_number AS TEXT), case_date, follow_up_date, case_status,
-                   chief_complaint, medical_history, dental_history, examination, diagnosis,
-                   consent_obtained, consent_date, consent_file_path, vitals_bp, vitals_hr,
-                   vitals_temp, vitals_weight, closed_date, created_at FROM cases
-        """)
-        
-        # Drop old table
-        cursor.execute("DROP TABLE IF EXISTS cases")
-        
-        # Rename new table to cases
-        cursor.execute("ALTER TABLE cases_new RENAME TO cases")
-        
-        # Recreate indexes
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_cases_patient_date ON cases(patient_id, case_date)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_cases_followup ON cases(follow_up_date)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_cases_status ON cases(case_status)")
-        
-        conn.commit()
-        print("✓ Migration completed: op_number converted to TEXT without UNIQUE constraint")
-        return True
-    except Exception as e:
-        print(f"✗ Migration error: {e}")
-        conn.rollback()
-        return False
-    finally:
-        conn.close()
-
 # ---------------------- PDF Export ----------------------
 def my_header(canvas, doc):
     canvas.saveState()
@@ -714,8 +580,6 @@ class ClinicApp(tk.Tk):
         
         # Initialize database and run migrations
         init_db()
-        # migrate_remove_unique_phone()
-        # migrate_op_number_to_text()
         
         # State
         self.current_patient_id = None
@@ -860,8 +724,8 @@ class ClinicApp(tk.Tk):
         self.var_address = tk.StringVar()
         
         ttk.Label(form_section, text="First Name *:", font=("Segoe UI", 9, "bold")).grid(row=0, column=0, sticky="w", pady=5)
-        first_entry = ttk.Entry(form_section, textvariable=self.var_first, font=("Segoe UI", 9))
-        first_entry.grid(row=0, column=1, sticky="ew", padx=(5, 15), pady=5)
+        self.first_entry = ttk.Entry(form_section, textvariable=self.var_first, font=("Segoe UI", 9))
+        self.first_entry.grid(row=0, column=1, sticky="ew", padx=(5, 15), pady=5)
         
         ttk.Label(form_section, text="Last Name *", font=("Segoe UI", 9, "bold")).grid(row=0, column=2, sticky="w", pady=5)
         last_entry = ttk.Entry(form_section, textvariable=self.var_last, font=("Segoe UI", 9))
@@ -1004,7 +868,7 @@ class ClinicApp(tk.Tk):
         
         # Initial load
         # Focus on first name field initiaally
-        first_entry.focus()
+        self.first_entry.focus()
 
     def _on_notebook_tab_changed(self, event=None):
         """Handle notebook tab changes to lazy-load patient list and reset search filters"""
@@ -1087,21 +951,24 @@ class ClinicApp(tk.Tk):
                 
                 self.current_patient_id = None
                 
+                # Show a message if user searched with filters
                 if name or phone:
-                    print(f"Debug: No patients found matching criteria")
-                else:
-                    conn = sqlite3.connect(DB_FILE)                
-                    total_count = conn.execute("SELECT COUNT(*) FROM patients").fetchone()[0]
-                    print("Debug: No patients found in database")
-                    conn.close()
-                    if total_count == 0:
-                        print("Debug: No patients found in database")
-                    else:
-                        print(f"Debug : Found {total_count} total patients found but none match criteria")
+                    search_criteria = []
+                    if name:
+                        search_criteria.append(f"Name: {name}")
+                    if phone:
+                        search_criteria.append(f"Phone: {phone}")
+                    criteria_str = ", ".join(search_criteria)
+                    messagebox.showinfo("No Results", f"No patient found with {criteria_str}")
             else:
                 for r in rows:
                     self.p_tree.insert("", "end", values=r)
                 print(f"Debug : Loaded {len(rows)} patients into tree")
+            
+            # Clear search fields after search is complete
+            self.var_p_name.set("")
+            self.var_p_phone.set("")
+            
         except sqlite3.Error as e:
             messagebox.showerror("Database error",f"Could not search patients.\n{e}")
 
@@ -1198,6 +1065,8 @@ class ClinicApp(tk.Tk):
         # clear case history
         self.clear_case_history()
         self.nb.select(self.tab_patients)
+        # Set focus to first name field
+        self.first_entry.focus()
 
     def clear_case_form(self):
         """Clear all case and treatment plan details from the form"""
@@ -1249,8 +1118,8 @@ class ClinicApp(tk.Tk):
         self.clear_case_form()
         # Refresh calendar to remove deleted cases
         self.refresh_calendar()
-        # Refresh browse tab
-        self.on_search()
+        # Clear search filters and refresh browse tab
+        self.on_search_clear()
 
     def on_patient_selected(self, event=None):
         sel = self.p_tree.selection()
@@ -1463,21 +1332,42 @@ class ClinicApp(tk.Tk):
             def on_escape(event=None):
                 close_calendar()
             
-            def on_focus_out(event=None):
-                """Close calendar when focus is lost"""
-                # Use after_idle to allow other widgets to process their events first
-                if not window_closed[0]:
-                    cal_window.after(100, close_calendar)
+            def on_button_press(event=None):
+                """Close calendar when user clicks outside of it"""
+                try:
+                    # Check if click was outside the calendar window
+                    x = event.x_root
+                    y = event.y_root
+                    cal_x = cal_window.winfo_rootx()
+                    cal_y = cal_window.winfo_rooty()
+                    cal_w = cal_window.winfo_width()
+                    cal_h = cal_window.winfo_height()
+                    
+                    # If click is outside the window bounds, close it
+                    if not (cal_x <= x <= cal_x + cal_w and cal_y <= y <= cal_y + cal_h):
+                        if not window_closed[0]:
+                            close_calendar()
+                except:
+                    pass
             
             cal_window.bind('<Escape>', on_escape)
-            cal_window.bind('<FocusOut>', on_focus_out)
+            # Bind to root window to catch clicks outside calendar
+            root.bind('<Button-1>', on_button_press)
             
-            # Also close calendar if main window gets focus (tab switching)
-            def on_main_window_focus(event=None):
-                if not window_closed[0]:
-                    cal_window.after(50, close_calendar)
+            # Store the binding so we can unbind later
+            def cleanup_bindings():
+                try:
+                    root.unbind('<Button-1>', on_button_press)
+                except:
+                    pass
             
-            root.bind('<FocusIn>', on_main_window_focus)
+            # Clean up bindings when window closes
+            original_destroy = cal_window.destroy
+            def destroy_with_cleanup():
+                cleanup_bindings()
+                original_destroy()
+            
+            cal_window.destroy = destroy_with_cleanup
             
             # Set focus to calendar to prevent immediate close
             cal_window.focus_set()
@@ -1707,7 +1597,8 @@ class ClinicApp(tk.Tk):
         
         # First row: OP Number and Case Date
         ttk.Label(case_info_frame, text="OP Number *", font=("Segoe UI", 9, "bold")).grid(row=0, column=0, sticky="w")
-        ttk.Entry(case_info_frame, textvariable=self.var_op_number, font=("Segoe UI", 10)).grid(row=0, column=1, sticky="ew", padx=(5, 15), pady=5)
+        self.op_number_entry = ttk.Entry(case_info_frame, textvariable=self.var_op_number, font=("Segoe UI", 10))
+        self.op_number_entry.grid(row=0, column=1, sticky="ew", padx=(5, 15), pady=5)
         ttk.Label(case_info_frame, text="Case Date (YYYY-MM-DD)", font=("Segoe UI", 9, "bold")).grid(row=0, column=2, sticky="w", pady=5)
         # Use a regular Entry field to prevent auto-population
         self.case_date_entry = ttk.Entry(case_info_frame, font=("Segoe UI", 10))
@@ -2202,6 +2093,8 @@ class ClinicApp(tk.Tk):
         bottom = ttk.LabelFrame(f, text="Cases with Revisit/Follow-up on Selected Date", padding=10)
         bottom.grid(row=2, column=0, sticky="nsew", padx=4, pady=4)
         bottom.columnconfigure(0, weight=1)
+        bottom.rowconfigure(0, weight=1)
+        bottom.rowconfigure(1, weight=0)
 
         cols = ("patient_name", "phone", "case_id", "status", "chief_complaint", "diagnosis")
         self.calendar_tree = ttk.Treeview(bottom, columns=cols, show="headings", height=10)
@@ -2213,13 +2106,13 @@ class ClinicApp(tk.Tk):
         for (c, w) in zip(cols, widths):
             self.calendar_tree.heading(c, text=headers[c])
             self.calendar_tree.column(c, width=w, anchor="center")
-        self.calendar_tree.pack(fill="both", expand=True)
+        self.calendar_tree.grid(row=0, column=0, sticky="nsew")
         yscroll = ttk.Scrollbar(bottom, orient="vertical", command=self.calendar_tree.yview)
-        yscroll.pack(side="right", fill="y")
+        yscroll.grid(row=0, column=1, sticky="ns")
         self.calendar_tree.configure(yscrollcommand=yscroll.set)
 
         actions = ttk.Frame(bottom)
-        actions.pack(fill="x", pady=4)
+        actions.grid(row=1, column=0, columnspan=2, sticky="ew", pady=4)
         ttk.Button(actions, text="Load Selected Case", command=self.on_load_selected_case_from_calendar).pack(side="left", padx=4)
         ttk.Button(actions, text="Open Selected Patient", command=self.on_open_selected_patient_from_calendar).pack(side="left", padx=4)
         
@@ -2660,6 +2553,8 @@ class ClinicApp(tk.Tk):
         for iid in self.scans_tree.get_children():
             self.scans_tree.delete(iid)
         self.clear_plan_inputs()
+        # Set focus to OP number field
+        self.op_number_entry.focus()
         self.nb.select(self.tab_case)
 
     def on_save_case(self):
@@ -2798,6 +2693,11 @@ class ClinicApp(tk.Tk):
             
             # Refresh calendar to show updated revisit dates
             self.refresh_calendar()
+            
+            # Reset case sheet form and patient tab
+            self.clear_case_sheet()
+            self.on_new_patient()
+            self.on_patients_clear()
                 
         except ValueError as e:
             messagebox.showerror("Validation Error", str(e))
@@ -3226,8 +3126,13 @@ class ClinicApp(tk.Tk):
         self.var_s_name.set("")
         self.var_s_phone.set("")
         self.var_s_dx.set("")
+        self.search_from_entry.delete(0, "end")
+        self.search_to_entry.delete(0, "end")
         self.search_page = 0
-        self.on_search()
+        # Clear the search results tree view
+        for iid in self.search_tree.get_children():
+            self.search_tree.delete(iid)
+
 
     def on_next_page(self):
         self.search_page += 1
@@ -3448,6 +3353,11 @@ class ClinicApp(tk.Tk):
             self.refresh_calendar()
             # Refresh browse tab
             self.on_search()
+            
+            # Reset case sheet form and patient tab
+            self.clear_case_sheet()
+            self.on_new_patient()
+            self.on_patients_clear()
         
         except sqlite3.Error as e:
             messagebox.showerror("Database Error", f"Could not close case.\n{e}")
